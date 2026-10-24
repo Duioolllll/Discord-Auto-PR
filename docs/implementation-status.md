@@ -5,7 +5,7 @@
 
 | 영역           | 구현한 동작                                                                                                                                           | 남은 범위                                                                                     |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| 기반           | Node 24 / pnpm / Turbo / TypeScript / lint / lockfile / CI                                                                                            | GitHub에서 CI 실행 및 branch protection 등록                                                  |
+| 기반           | Node 24 / pnpm / Turbo / TypeScript / lint / lockfile / GitHub Actions CI 통과                                                                        | branch protection 등록                                                                        |
 | 데이터         | Job, Attempt, Worker, Lease, Event, Inbox/Outbox, Approval, Identity, PRLink, JobStep, MergeRecord, Budget, Usage, DeadLetter, Audit 및 3개 migration | 운영 DB 최소 권한·백업·보존/삭제 정책                                                         |
 | API            | 인증·저장소별 RBAC, 작업 생성/조회/취소, 목록·워커·drain·비용·예산·감사, 이벤트 cursor/SSE                                                            | 공개 ingress/TLS, rate limit, 완전한 OpenAPI, SSO                                             |
 | Discord        | /develop /refactor /status /logs /workers /cancel /approve /merge /cost, 즉시 defer, mention 차단                                                     | 실제 봇 연결·명령 등록, /fix·PR 대상 /review, 비동기 스레드 알림                              |

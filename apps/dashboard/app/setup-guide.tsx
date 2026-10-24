@@ -6,6 +6,14 @@ export function SetupGuide() {
         <a href="https://github.com/Duioolllll/Discord-Auto-PR#키-발급과-설정">전체 설정 문서 ↗</a>
       </div>
       <p>
+        처음 설치한다면{' '}
+        <a href="https://github.com/Duioolllll/Discord-Auto-PR/blob/main/docs/getting-started.md">
+          설치부터 실행까지 따라 하는 가이드
+        </a>
+        를 먼저 확인하세요. Windows·Ubuntu 준비부터 대시보드 실행, 서비스 연결, 오류 해결까지
+        순서대로 설명합니다.
+      </p>
+      <p>
         각 항목을 펼쳐 발급 위치와 설정 순서를 확인하세요. 설정은 실행 서버의 <code>.env</code>에
         저장하고, <code>_FILE</code>에는 비밀값이 담긴 파일의 절대 경로를 넣습니다.
       </p>

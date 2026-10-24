@@ -4,6 +4,42 @@ Discord 요청을 격리 워커에 배정하고, 변경·PR·사람 승인·병�
 제어 API, Codex adapter/supervisor, GitHub App 연동 경로, 승인 정책과 Next.js 대시보드를 구현했습니다.
 실계정 연동은 아직 검증하지 않았고 **현재 호스트에서는 Codex 내부 sandbox가 차단됩니다.** [구현 상태와 한계](docs/implementation-status.md)를 확인하세요.
 
+## 처음 설치한다면 여기부터
+
+**[설치부터 실행까지 따라 하는 가이드](docs/getting-started.md)**를 먼저 읽어 주세요.
+Windows의 WSL2·Docker Desktop 준비, Ubuntu 도구 설치, Node·pnpm 설치부터
+DB·대시보드·GitHub App·Discord 봇·Codex 워커 설정까지 순서대로 설명합니다.
+각 단계의 성공 확인 방법, 종료·재실행 방법, 오류 해결표도 포함합니다.
+
+처음에는 **대시보드 실행까지** 진행하면 됩니다. 이 단계에는 외부 서비스 키가 필요 없습니다.
+Node.js 24, pnpm 10.20.0, Git, Docker + Compose v2를 준비한 Ubuntu/WSL 터미널에서:
+
+```bash
+git clone https://github.com/Duioolllll/Discord-Auto-PR.git
+cd Discord-Auto-PR
+pnpm install --frozen-lockfile
+pnpm setup:local
+pnpm infra:up
+pnpm db:generate
+pnpm db:migrate
+pnpm build
+```
+
+이후 **서로 다른 터미널 3개**에서 아래 명령을 하나씩 실행합니다. 각 터미널의 현재 폴더는 저장소 루트여야 합니다.
+
+| 터미널 | 실행 명령                             | 역할                          |
+| ------ | ------------------------------------- | ----------------------------- |
+| A      | `pnpm dev`                            | Control API, 로컬 3001번 포트 |
+| B      | `pnpm --filter @hub/orchestrator dev` | 작업 상태·큐 관리             |
+| C      | `pnpm --filter @hub/dashboard start`  | 웹 대시보드, 로컬 3000번 포트 |
+
+[http://localhost:3000](http://localhost:3000)을 열고 `.env`의 **`ADMIN_API_TOKEN` 값만** 입력해 로그인합니다.
+아직 저장소·워커 목록이 비어 있는 것은 정상입니다.
+다음은 [GitHub 저장소 등록](docs/getting-started.md#7-작업할-저장소와-예산-등록),
+[Discord 연결](docs/getting-started.md#8-discord-봇-연결),
+[Codex 로그인](docs/getting-started.md#9-codex-cli-로그인실행-이미지-확인) 순서로 진행하세요.
+PR 생성 후 사람 승인·병합을 연결하는 절차는 [별도 운영자 안내](docs/approval-setup.md)에 있습니다.
+
 ## 키 발급과 설정
 
 **Codex는 ChatGPT 계정으로 로그인하므로 OpenAI API 키가 필요 없습니다.**
