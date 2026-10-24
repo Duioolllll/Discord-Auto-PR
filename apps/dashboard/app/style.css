@@ -372,6 +372,74 @@ td {
 .login small {
   font-size: 10px;
 }
+.welcome {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 20px 40px;
+}
+.welcome .login {
+  width: min(430px, 100%);
+  margin: 6vh auto 36px;
+}
+.setup-shortcut {
+  display: block;
+  color: var(--accent);
+  margin-top: 22px;
+  font-size: 12px;
+}
+.setup-guide {
+  min-width: 0;
+  padding: 24px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 9px;
+  overflow-wrap: anywhere;
+}
+.setup-guide .section-title {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.setup-guide a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.setup-guide details {
+  border-top: 1px solid var(--line);
+}
+.setup-guide summary {
+  padding: 18px 0;
+  cursor: pointer;
+  font-weight: 550;
+  line-height: 1.7;
+}
+.setup-guide summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+.setup-body {
+  padding-bottom: 8px;
+}
+.setup-body ol {
+  padding-left: 22px;
+  color: var(--muted);
+}
+.setup-body li {
+  padding-left: 4px;
+  margin-bottom: 14px;
+  line-height: 1.8;
+}
+.setup-guide code {
+  color: #d4dfc7;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+}
+.setup-guide pre {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+}
 .detail {
   margin: 0 auto;
   max-width: 1100px;

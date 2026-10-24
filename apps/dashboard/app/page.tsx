@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { api, sessionToken, type Job, type Repository, type Worker } from '../lib/api';
 import { login, logout, createJob, configureBudget } from './actions';
 import { Refresh } from './refresh';
+import { SetupGuide } from './setup-guide';
 export const dynamic = 'force-dynamic';
 const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 export default async function Page({
@@ -14,30 +15,36 @@ export default async function Page({
   const { error } = await searchParams;
   if (!(await sessionToken()))
     return (
-      <main className="login">
-        <div className="brand">
-          ◈ <b>PR HUB</b>
+      <main className="welcome">
+        <div className="login">
+          <div className="brand">
+            ◈ <b>PR HUB</b>
+          </div>
+          <h1>Control room</h1>
+          <p>개발 작업, 워커, 승인과 비용을 한 곳에서 확인합니다.</p>
+          <form action={login}>
+            <label htmlFor="token">Control API access token</label>
+            <input
+              id="token"
+              name="token"
+              type="password"
+              autoComplete="off"
+              required
+              minLength={32}
+            />
+            <button>대시보드 열기 →</button>
+          </form>
+          {error && (
+            <p role="alert" className="error">
+              인증 또는 API 연결을 확인해 주세요.
+            </p>
+          )}
+          <small>토큰은 암호화된 HttpOnly 세션으로 보관됩니다.</small>
+          <a className="setup-shortcut" href="#setup">
+            처음 연결하시나요? 키 발급·설정 안내 ↓
+          </a>
         </div>
-        <h1>Control room</h1>
-        <p>개발 작업, 워커, 승인과 비용을 한 곳에서 확인합니다.</p>
-        <form action={login}>
-          <label htmlFor="token">Control API access token</label>
-          <input
-            id="token"
-            name="token"
-            type="password"
-            autoComplete="off"
-            required
-            minLength={32}
-          />
-          <button>대시보드 열기 →</button>
-        </form>
-        {error && (
-          <p role="alert" className="error">
-            인증 또는 API 연결을 확인해 주세요.
-          </p>
-        )}
-        <small>토큰은 암호화된 HttpOnly 세션으로 보관됩니다.</small>
+        <SetupGuide />
       </main>
     );
   const results = await Promise.allSettled([
@@ -70,6 +77,7 @@ export default async function Page({
           <a href="#workers">▦ &nbsp; Workers</a>
           <a href="#repositories">⌘ &nbsp; Repositories</a>
           <a href="#cost">＄ &nbsp; Cost & budget</a>
+          <a href="#setup">⚙ &nbsp; 키 발급·설정</a>
         </nav>
         <div className="aside-bottom">
           <span className="pill">LOCAL CONTROL PLANE</span>
@@ -290,6 +298,7 @@ export default async function Page({
             ))}
           </div>
         </section>
+        <SetupGuide />
         <footer>
           Discord AI PR Hub · Asia/Seoul · KST · GitHub 정책과 사람의 승인을 존중합니다.
         </footer>

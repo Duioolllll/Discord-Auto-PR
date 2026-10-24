@@ -4,6 +4,130 @@ Discord 요청을 격리 워커에 배정하고, 변경·PR·사람 승인·병�
 제어 API, Codex adapter/supervisor, GitHub App 연동 경로, 승인 정책과 Next.js 대시보드를 구현했습니다.
 실계정 연동은 아직 검증하지 않았고 **현재 호스트에서는 Codex 내부 sandbox가 차단됩니다.** [구현 상태와 한계](docs/implementation-status.md)를 확인하세요.
 
+## 키 발급과 설정
+
+**Codex는 ChatGPT 계정으로 로그인하므로 OpenAI API 키가 필요 없습니다.**
+GitHub App·Discord 봇은 각 서비스에서 생성합니다. 이미지·네트워크·테스트 명령은 직접 지정하는 설정입니다.
+대시보드 메인 화면의 **키 발급·설정 안내**에서도 로그인 전후에 같은 설정 순서를 확인할 수 있습니다.
+
+### 어디서 발급하나요?
+
+| 환경변수                            | 발급·확인 위치 / 입력할 값                                                                                                                         |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GITHUB_APP_ID`                     | [GitHub Apps](https://github.com/settings/apps) → 개발 App → General → **App ID**                                                                  |
+| `GITHUB_APP_PRIVATE_KEY_FILE`       | 개발 App → Private keys → **Generate a private key** → 다운로드한 PEM 파일의 절대 경로                                                             |
+| `GITHUB_MERGE_APP_ID`               | 별도로 만든 병합 App → General → **App ID**                                                                                                        |
+| `GITHUB_MERGE_APP_PRIVATE_KEY_FILE` | 병합 App에서 다운로드한 PEM 파일의 절대 경로                                                                                                       |
+| `GITHUB_WEBHOOK_SECRET_FILE`        | 직접 생성한 32자 이상 임의 문자열을 저장한 파일의 절대 경로. GitHub 개발 App의 Webhook secret에도 같은 값 입력                                     |
+| `DISCORD_BOT_TOKEN_FILE`            | [Discord Developer Portal](https://discord.com/developers/applications) → 애플리케이션 → Bot → **Reset Token** → 토큰을 저장한 파일의 절대 경로    |
+| `DISCORD_APPLICATION_ID`            | Discord 애플리케이션 → General Information → **Application ID**                                                                                    |
+| `DISCORD_GUILD_ID`                  | Discord 개발자 모드 활성화 → 대상 서버 우클릭 → **서버 ID 복사**                                                                                   |
+| `DISCORD_ADMIN_USER_IDS`            | 관리자 사용자 우클릭 → **사용자 ID 복사**. 여러 명은 공백 없이 쉼표로 구분                                                                         |
+| `HUB_CODEX_API_KEY_FILE`            | **ChatGPT 로그인에서는 비워 둠.** 선택형 `api-key` 모드에서만 [OpenAI API keys](https://platform.openai.com/api-keys)에서 생성한 키 파일 경로 지정 |
+| `HUB_CODEX_IMAGE`                   | `pnpm runner:build` 후 `docker image inspect hub-codex:0.163.0 --format '{{.Id}}'`로 얻은 `sha256:…` 이미지 ID                                     |
+| `HUB_RUNNER_NETWORK`                | 운영자가 Codex 접속 목적지 제한을 구성한 `hub-egress-*` Docker 네트워크 이름                                                                       |
+| `WORKER_TEST_COMMAND`               | 대상 저장소의 테스트 명령을 JSON 배열로 입력. 예: `["pnpm","test"]`                                                                                |
+
+`*_FILE`에는 키 내용이나 다운로드 URL이 아니라 **실행 서버에서 읽을 수 있는 파일의 절대 경로**를 넣습니다.
+App ID·Application ID·서버 ID는 식별자이며, PEM·봇 토큰·웹훅 secret은 비밀값입니다.
+
+### 1. 실행 서버에 설정 저장
+
+의존성 설치 후 저장소 폴더에서 `pnpm setup:local`을 실행하세요.
+기존 `.env`를 보존하며, 새 환경에서는 내부 역할별 토큰과 웹훅 secret을 생성하고 대시보드 세션 키를 준비합니다.
+외부 연동 항목은 [.env.example](.env.example)을 참고해 로컬 `.env`에 추가하세요.
+이미 설정한 `.env`를 예제 파일로 덮어쓰지 마세요.
+
+- 대시보드 로그인: `.env`의 **`ADMIN_API_TOKEN`** 값 사용.
+- `BOT_API_TOKEN`: Discord 봇이 Control API에 접근하는 내부 토큰. **Discord 봇 토큰과 다릅니다.**
+- `WORKER_ENROLLMENT_TOKEN`: 워커 등록용 내부 토큰.
+- `DASHBOARD_SESSION_SECRET`: 대시보드 쿠키 암호화용 내부 키.
+
+비밀 파일은 전용 디렉터리에 보관하고 디렉터리는 `0700`, 파일은 `0600`으로 설정하세요.
+예를 들어 `GITHUB_APP_PRIVATE_KEY_FILE=/absolute/private-secrets/github-dev.pem`처럼 지정합니다.
+클라우드에서는 런타임 secret 마운트로 파일을 제공하고 환경변수에는 마운트 경로를 넣습니다.
+키를 환경변수 값으로 넣는 입력란과 파일을 제공하는 기능은 다릅니다. 경로만 설정해도 파일이 자동 생성되지는 않습니다.
+변경 후 해당 API·봇·워커·대시보드 서비스를 재시작하세요.
+
+### 2. GitHub App 두 개 생성
+
+1. [New GitHub App](https://github.com/settings/apps/new)에서 **개발용 App**과 **병합용 App**을 각각 만듭니다.
+   조직 소유 App은 조직 Settings → Developer settings → GitHub Apps에서 생성합니다.
+2. 각 App의 **App ID**와 **Private keys → Generate a private key**에서 다운로드한 PEM을 위 표의 항목에 연결합니다.
+   OAuth Client ID·Client secret을 넣는 항목이 아닙니다.
+3. Repository permissions를 다음과 같이 설정합니다. Metadata 읽기는 GitHub가 기본 부여합니다.
+
+   | App    | Repository permissions                                                                                 |
+   | ------ | ------------------------------------------------------------------------------------------------------ |
+   | 개발용 | Contents: Read and write, Pull requests: Read and write, Checks: Read-only, Commit statuses: Read-only |
+   | 병합용 | Contents: Read and write, Pull requests: Read-only                                                     |
+
+4. 개발 App의 Webhook URL에 **`https://공개-API-주소/webhooks/github`**를 입력합니다.
+   GitHub에서 접근할 수 있는 HTTPS 주소가 필요하며 `localhost`는 사용할 수 없습니다.
+   Webhook secret은 `setup:local`로 생성된 `GITHUB_WEBHOOK_SECRET`을 사용하거나 별도 임의 문자열을 생성합니다.
+   GitHub 입력값과 API가 읽는 값은 같아야 합니다. 파일 방식이면 그 값을 파일에 보관하고 `GITHUB_WEBHOOK_SECRET_FILE`을 지정하세요.
+   파일 설정이 있으면 인라인 `GITHUB_WEBHOOK_SECRET`보다 우선합니다.
+   **Pull request, Check run, Check suite, Status** 이벤트를 구독합니다. 병합 App의 웹훅은 사용하지 않습니다.
+5. 두 App에서 **Install App → 대상 계정 → Only select repositories**로 작업 대상 저장소에 설치합니다.
+   설치 설정 URL의 `/installations/숫자`가 installation ID이며 App ID와 다릅니다.
+6. 아래처럼 실제 개발·병합 installation ID로 저장소를 등록합니다. 예시 식별자는 실제 값으로 바꾸세요.
+
+   ```sh
+   SEED_REPOSITORY=owner/repository \
+     SEED_INSTALLATION_ID=개발_App_설치_ID \
+     SEED_MERGE_INSTALLATION_ID=병합_App_설치_ID \
+     SEED_BUDGET_CENTS=1000 \
+     SEED_DISCORD_USER_ID=본인_Discord_사용자_ID pnpm db:seed
+   ```
+
+7. 저장소 Settings → Rules → Rulesets에서 필수 리뷰·체크를 구성합니다.
+   두 App을 규칙 우회 대상으로 추가하지 마세요. 실제 PR 쓰기를 활성화할 때만 `GITHUB_MUTATIONS_ENABLED=true`로 설정합니다.
+
+GitHub 앱 설치만으로 요청자·승인자 계정 연결이나 역할이 등록되지는 않습니다.
+위 seed는 지정한 Discord 사용자에 해당 저장소의 developer 역할을 부여합니다.
+승인·병합에는 추가 역할 설정, 서로 다른 사용자의 `/identity/github` 계정 검증과 현재 SHA의 사람 리뷰가 필요합니다.
+현재 UI에는 공개 OAuth 계정 연결 화면이 없습니다. 자세한 구현 범위는 [구현 상태](docs/implementation-status.md)를 확인하세요.
+
+### 3. Discord 봇 생성·초대
+
+1. [Developer Portal](https://discord.com/developers/applications) → **New Application**을 만듭니다.
+2. **General Information → Application ID**를 `DISCORD_APPLICATION_ID`에 입력합니다.
+3. **Bot → Reset Token**에서 발급한 값을 비공개 파일에 저장하고 `DISCORD_BOT_TOKEN_FILE`에 경로를 지정합니다.
+4. **OAuth2 → URL Generator**에서 `bot`, `applications.commands`를 선택하고 **View Channels, Send Messages** 권한으로 대상 서버에 초대합니다.
+   현재 봇은 Guilds intent만 사용하므로 Message Content Intent를 켤 필요가 없습니다.
+5. Discord 앱의 **사용자 설정 → 고급 → 개발자 모드**를 켜고 서버·사용자 우클릭 메뉴에서 ID를 복사합니다.
+   각각 `DISCORD_GUILD_ID`, `DISCORD_ADMIN_USER_IDS`에 입력합니다.
+6. 설정 후 명령을 등록하고 봇을 시작합니다. 등록 명령은 해당 서버의 기존 애플리케이션 명령 목록을 갱신합니다.
+
+   ```sh
+   pnpm --filter @hub/discord-bot dev --register-commands
+   pnpm dev:bot
+   ```
+
+### 4. Codex CLI 로그인·워커 설정
+
+개인 Linux/WSL 워커에 **Codex CLI 0.163.0**을 설치하고 저장소 폴더에서 실행합니다.
+
+```sh
+npm install --global @openai/codex@0.163.0
+pnpm codex:login
+pnpm codex:status
+```
+
+CLI가 안내하는 페이지에서 ChatGPT 계정으로 로그인하세요. 기본값은 `HUB_CODEX_AUTH_MODE=chatgpt`입니다.
+`HUB_CODEX_API_KEY_FILE`은 비워 두고, 클라우드 환경 설정에 이전 API 키 필수 항목이 남아 있으면 삭제하세요.
+다른 전용 로그인 폴더를 쓰려면 `HUB_CODEX_AUTH_DIR`에 절대 경로를 지정합니다.
+계정의 Codex 사용 권한·한도가 적용되며, 로그인 확인만으로 모델 호출 성공을 보장하지는 않습니다.
+
+`pnpm runner:build`로 실행 이미지를 준비하고 위 표대로 `HUB_CODEX_IMAGE`를 지정하세요.
+`HUB_RUNNER_NETWORK`는 접속 목적지를 제한한 네트워크가 필요합니다. `docker network create`로 이름만 만드는 것으로 제한이 적용되지는 않습니다.
+`WORKER_TEST_COMMAND`는 운영자가 대상 저장소에 맞춰 정하며, 실행 이미지에 해당 도구와 의존성이 있어야 합니다.
+`pnpm runner:check`가 성공한 호스트에서만 `pnpm dev:worker`를 실행하세요.
+**현재 클라우드 호스트는 namespace sandbox를 지원하지 않아 실제 Codex 작업에는 별도 호환 워커/VM이 필요합니다.**
+
+API 키 인증을 선택할 때만 `HUB_CODEX_AUTH_MODE=api-key`와 `HUB_CODEX_API_KEY_FILE`을 설정합니다.
+키·PEM·`.env`·Codex 로그인 폴더는 Git, 채팅, 공유 이미지나 환경 스냅샷에 포함하지 마세요.
+
 ## 개발 환경
 
 Node.js 24 (`.node-version`), pnpm 10.20.0/Corepack, Docker Engine + Compose v2가 필요합니다.
