@@ -2,7 +2,8 @@
 
 Discord 요청을 격리 워커에 배정하고, 변경·PR·사람 승인·병합을 감사 가능한 작업으로 관리하는 TypeScript 모노레포입니다.
 제어 API, Codex adapter/supervisor, GitHub App 연동 경로, 승인 정책과 Next.js 대시보드를 구현했습니다.
-실계정 연동은 아직 검증하지 않았고 **현재 호스트에서는 Codex 내부 sandbox가 차단됩니다.** [구현 상태와 한계](docs/implementation-status.md)를 확인하세요.
+실계정 연동은 아직 검증하지 않았습니다. Codex Runner는 최소 확장 seccomp 정책으로 실제 Docker·Bubblewrap 격리 검사를 통과했습니다.
+호스트별 지원 여부는 `pnpm runner:check`로 확인하세요. [Runner 보안·업데이트 안내](docs/runner-security.md), [구현 상태와 한계](docs/implementation-status.md)를 참고하세요.
 
 ## 처음 설치한다면 여기부터
 
@@ -159,7 +160,8 @@ CLI가 안내하는 페이지에서 ChatGPT 계정으로 로그인하세요. 기
 `HUB_RUNNER_NETWORK`는 접속 목적지를 제한한 네트워크가 필요합니다. `docker network create`로 이름만 만드는 것으로 제한이 적용되지는 않습니다.
 `WORKER_TEST_COMMAND`는 운영자가 대상 저장소에 맞춰 정하며, 실행 이미지에 해당 도구와 의존성이 있어야 합니다.
 `pnpm runner:check`가 성공한 호스트에서만 `pnpm dev:worker`를 실행하세요.
-**현재 클라우드 호스트는 namespace sandbox를 지원하지 않아 실제 Codex 작업에는 별도 호환 워커/VM이 필요합니다.**
+Codex 컨테이너에는 저장소의 최소 확장 seccomp 정책을 자동 적용하며, 실제 격리가 통과한 호스트에서만 워커를 실행합니다.
+이전 설치는 이미지를 재빌드하고 `.env`의 image ID도 갱신하세요. [기존 설치 업데이트·진단](docs/runner-security.md#8-기존-설치-업데이트와-정상-실행-확인)을 참고하세요.
 
 API 키 인증을 선택할 때만 `HUB_CODEX_AUTH_MODE=api-key`와 `HUB_CODEX_API_KEY_FILE`을 설정합니다.
 키·PEM·`.env`·Codex 로그인 폴더는 Git, 채팅, 공유 이미지나 환경 스냅샷에 포함하지 마세요.
@@ -290,8 +292,10 @@ pnpm runner:check
 ```
 
 빌드는 공식 `@openai/codex@0.163.0-linux-x64` npm 아티팩트의 고정 SHA-512를 확인하고 네트워크 없이 이미지를 조립합니다.
-`runner:check`는 버전과 실제 내부 namespace sandbox를 검사합니다. 현재 클라우드 호스트에서는 exit 2 /
-`NAMESPACE_SANDBOX_UNAVAILABLE`이므로 **실제 워커를 시작하지 않습니다.** 호환되는 전용 워커/VM이 필요합니다.
+`runner:check`는 이미지 ID·버전·seccomp 적용과 실제 내부 namespace/권한/쓰기/네트워크/인증 격리를 검사합니다.
+검증 환경에서 `{"ready":true,"reason":"OK"}`를 확인했습니다. 자신의 호스트에서도 이 결과를 확인한 뒤 실행하세요.
+정책이 없거나 적용되지 않으면 중단하며, sandbox를 끄는 방식으로 전환하지 않습니다.
+구체적인 syscall·지원 환경·복구 절차는 [Runner 보안 안내](docs/runner-security.md)를 확인하세요.
 
 실행 가능한 호스트에서는 immutable `HUB_CODEX_IMAGE` image ID, 로그인된 전용 Codex 프로필, 운영자가 제한한
 `HUB_RUNNER_NETWORK=hub-egress-...`, 그리고 `WORKER_TEST_COMMAND` JSON argv를 구성해야 합니다.

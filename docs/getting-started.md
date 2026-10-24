@@ -16,7 +16,8 @@
 **우선 5단계까지 완료해 대시보드부터 열어 보세요.**
 그때는 GitHub 키, Discord 봇 토큰, OpenAI API 키가 없어도 됩니다.
 실제 AI 실행에는 Codex 로그인뿐 아니라 아래에서 설명하는 워커 환경이 필요합니다.
-현재 Codex 클라우드 호스트에서는 내부 sandbox가 차단되어 실제 AI 작업은 별도 호환 워커/VM에서 실행해야 합니다.
+최소 확장 seccomp 정책을 적용한 검증 환경에서 실제 Docker 내부 sandbox 검사가 통과했습니다.
+본인 호스트에서도 9단계의 `runner:check`가 성공해야 합니다. 이전 설치는 [Runner 업데이트 안내](runner-security.md#8-기존-설치-업데이트와-정상-실행-확인)를 먼저 확인하세요.
 
 ## 1. 실행할 운영체제 준비
 
@@ -437,15 +438,17 @@ HUB_CODEX_IMAGE=sha256:여기에_실제_이미지_ID_전체
 
 이 이미지는 Hub 앱을 실행하는 이미지가 아니라 **AI 작업 실행기 이미지**입니다.
 `runner:check`의 정상 결과는 `{"ready":true,"reason":"OK"}`입니다.
-이 검사는 기본 태그의 이미지를 검사합니다. 맞춤 이미지를 검사하려면 파일에 적은 값과 같은 ID를 직접 전달하세요.
+이 검사는 `.env`에 지정한 이미지 ID를 우선 사용합니다. 임시로 다른 맞춤 이미지를 검사하려면 다음처럼 ID를 직접 전달할 수 있습니다.
 
 ```bash
 HUB_CODEX_IMAGE=sha256:실제_맞춤_이미지_ID pnpm runner:check
 ```
 
-`runner:check` 자체는 `.env`를 자동으로 읽지 않습니다.
+`runner:check`는 루트 `.env`의 `HUB_CODEX_IMAGE`를 읽습니다. 비어 있으면 기본 태그의 로컬 이미지 ID를 찾습니다.
+이미지를 재빌드했다면 `.env`의 기존 ID도 새 ID로 바꾸세요.
 `NAMESPACE_SANDBOX_UNAVAILABLE`이면 그 호스트에서 Codex 내부 격리를 실행할 수 없습니다.
-**현재 Codex 클라우드 호스트가 이 경우입니다.** 같은 설치를 호환되는 개인 Linux 워커/VM에서 준비한 뒤 다시 검사해야 합니다.
+저장소의 정책 적용 여부, kernel namespace 설정과 LSM 제한을 확인하세요. 지원할 수 없는 호스트에서는 워커를 실행하지 않습니다.
+원인별 확인 방법은 [Runner 보안·진단 안내](runner-security.md)에 있습니다.
 Docker가 실행된다는 것과 Codex 내부 sandbox가 실행된다는 것은 별개입니다.
 
 ## 10. 워커 네트워크·프로젝트 테스트 준비 후 시작
@@ -618,7 +621,7 @@ pnpm build
 | Discord 명령이 없음                              | 봇 초대·대상 guild ID·`--register-commands` 성공 확인                                          |
 | `ChatGPT login required`·로그인 미감지           | 같은 워커·일반 사용자로 `pnpm codex:login`, 이어서 `pnpm codex:status` 실행                    |
 | Codex 프로필 잠금 오류                           | 같은 프로필을 쓰는 워커/로그인이 실행 중인지 확인. 종료가 확인된 오래된 잠금만 정리            |
-| `NAMESPACE_SANDBOX_UNAVAILABLE`                  | 현재 호스트는 실제 Codex 워커 부적합. 호환되는 Linux 워커/VM에서 재검사                        |
+| `NAMESPACE_SANDBOX_UNAVAILABLE`                  | seccomp·kernel·LSM 제한 확인. [Runner 진단 안내](runner-security.md) 참고                      |
 | `Engine version, image or credentials not ready` | Codex 버전·이미지 ID·로그인·sandbox 검사·승인 네트워크를 순서대로 확인                         |
 | 테스트에서 pnpm·pytest 등을 찾을 수 없음         | 기본 이미지에 해당 도구가 없음. 도구와 의존성을 갖춘 맞춤 이미지 준비                          |
 | `QUEUED`에서 계속 대기                           | 실제 codex 워커 ONLINE 여부 확인. probe는 실행 워커가 아님                                     |

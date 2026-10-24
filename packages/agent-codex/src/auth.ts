@@ -12,6 +12,20 @@ export const defaultCodexAuthDirectory = fileURLToPath(
   new URL('../../../.local/codex-auth', import.meta.url),
 );
 export const fileCredentialArguments = ['-c', 'cli_auth_credentials_store="file"'];
+// CLI credentials remain readable by the trusted CLI, but are masked from its commands.
+export const codexPermissionArguments = [
+  '-c',
+  'permissions.hub={extends=":workspace",filesystem={"/home/runner/.codex/auth.json"="deny","/home/runner/.codex/config.toml"="deny"},network={enabled=false}}',
+  '-c',
+  'shell_environment_policy.exclude=["CODEX_API_KEY","OPENAI_API_KEY"]',
+  '-c',
+  'default_permissions="hub"',
+];
+
+export function codexSandboxArguments(command: string[]) {
+  // 0.163.0 selects the host platform; "linux" would be interpreted as the command.
+  return ['codex', 'sandbox', ...codexPermissionArguments, '--', ...command];
+}
 
 export function codexAuthDirectory(value?: string) {
   if (!value) return defaultCodexAuthDirectory;
@@ -115,14 +129,13 @@ export function codexExecArguments() {
     'codex',
     '-a',
     'never',
+    ...codexPermissionArguments,
     'exec',
     '--ignore-user-config',
     '--ignore-rules',
     ...fileCredentialArguments,
     '--json',
     '--ephemeral',
-    '--sandbox',
-    'workspace-write',
     '--skip-git-repo-check',
     '--cd',
     '/workspace',

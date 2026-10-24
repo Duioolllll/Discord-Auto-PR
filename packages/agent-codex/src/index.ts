@@ -1,144 +1,21 @@
-import { spawn, execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
-import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { redactLog } from '@hub/policy';
 import type { AgentAdapter } from '@hub/agent-core';
 import type { RunSpec, RunResult, Kind } from '@hub/contracts';
 import {
-  assertSeparateProfile,
   chatGPTLoginConfirmed,
   codexExecArguments,
   fileCredentialArguments,
   validateCodexAuthDirectory,
   type CodexAuthentication,
 } from './auth.js';
+import { runSandbox, codexSeccompPath } from './container.js';
+import { checkCodexSandbox } from './probe.js';
 export * from './auth.js';
-
-const exec = promisify(execFile);
-export const codexVersion = '0.163.0';
-export interface SandboxOptions {
-  image: string;
-  workspace: string;
-  network?: string;
-  timeoutSeconds: number;
-  maxOutputBytes: number;
-  env?: Record<string, string>;
-  codexAuthDirectory?: string;
-}
-
-export function sandboxArguments(name: string, options: SandboxOptions, command: string[]) {
-  if (!/^sha256:[a-f0-9]{64}$/.test(options.image))
-    throw new Error('Runner image must be an immutable local sha256 image ID');
-  if (
-    options.network &&
-    options.network !== 'none' &&
-    !/^hub-egress-[a-z0-9-]+$/.test(options.network)
-  )
-    throw new Error('Runner network must be an operator-provisioned hub-egress-* network');
-  const uid = process.getuid?.() ?? 1000;
-  if (uid === 0) throw new Error('Worker supervisor must run as a non-root user');
-  const workspace = resolve(options.workspace);
-  if (workspace.includes(',') || workspace.includes('\n'))
-    throw new Error('Invalid workspace path');
-  if (options.codexAuthDirectory) {
-    if (!options.codexAuthDirectory.startsWith('/') || /[\n\r,\0]/.test(options.codexAuthDirectory))
-      throw new Error('Invalid Codex authentication directory');
-    assertSeparateProfile(options.codexAuthDirectory, workspace);
-  }
-  return [
-    'run',
-    '--rm',
-    '-i',
-    '--name',
-    name,
-    '--read-only',
-    '--cap-drop=ALL',
-    '--security-opt=no-new-privileges',
-    '--user',
-    `${uid}:${process.getgid?.() ?? 1000}`,
-    '--pids-limit=128',
-    '--memory=1g',
-    '--memory-swap=1g',
-    '--cpus=1',
-    '--network',
-    options.network ?? 'none',
-    '--tmpfs',
-    '/tmp:rw,nosuid,nodev,size=134217728,mode=1777',
-    '--mount',
-    `type=bind,source=${workspace},target=/workspace`,
-    '--workdir',
-    '/workspace',
-    '--tmpfs',
-    `/home/runner:rw,nosuid,nodev,size=67108864,uid=${uid},gid=${process.getgid?.() ?? 1000},mode=700`,
-    '--env',
-    'HOME=/home/runner',
-    '--env',
-    'CODEX_HOME=/home/runner/.codex',
-    '--env',
-    'NPM_CONFIG_CACHE=/tmp/npm',
-    ...(options.codexAuthDirectory
-      ? ['--mount', `type=bind,source=${options.codexAuthDirectory},target=/home/runner/.codex`]
-      : []),
-    ...Object.keys(options.env ?? {}).flatMap((key) => ['--env', key]),
-    options.image,
-    ...command,
-  ];
-}
-
-export async function runSandbox(
-  options: SandboxOptions,
-  command: string[],
-  input: string,
-  signal: AbortSignal,
-) {
-  if (options.codexAuthDirectory) {
-    const directory = await validateCodexAuthDirectory(options.codexAuthDirectory);
-    assertSeparateProfile(directory, await realpath(options.workspace));
-    options = { ...options, codexAuthDirectory: directory };
-  }
-  const name = `hub-${randomUUID()}`;
-  const stop = new AbortController();
-  const combined = AbortSignal.any([
-    signal,
-    stop.signal,
-    AbortSignal.timeout(options.timeoutSeconds * 1000),
-  ]);
-  const args = sandboxArguments(name, options, command);
-  let output = '';
-  let stderr = '';
-  let total = 0;
-  try {
-    const code = await new Promise<number>((resolveResult, reject) => {
-      const child = spawn('docker', args, {
-        env: { ...process.env, ...options.env },
-        stdio: ['pipe', 'pipe', 'pipe'],
-        signal: combined,
-      });
-      const append = (chunk: Buffer, error: boolean) => {
-        total += chunk.length;
-        if (total > options.maxOutputBytes) {
-          stop.abort();
-          return;
-        }
-        if (error) stderr += chunk.toString('utf8');
-        else output += chunk.toString('utf8');
-      };
-      child.stdout.on('data', (chunk) => append(chunk, false));
-      child.stderr.on('data', (chunk) => append(chunk, true));
-      child.once('error', reject);
-      child.once('close', (code) => resolveResult(code ?? 1));
-      child.stdin.on('error', () => undefined);
-      child.stdin.end(input);
-    });
-    return { code, output, stderr };
-  } finally {
-    // Killing docker's client does not guarantee the container stopped.
-    await exec('docker', ['rm', '-f', name], { timeout: 10000 }).catch(() => undefined);
-  }
-}
+export * from './container.js';
+export * from './probe.js';
 
 export function parseCodexEvents(output: string): RunResult {
   let summary = '';
@@ -170,45 +47,6 @@ export function parseCodexEvents(output: string): RunResult {
     artifacts: [],
     usage,
   };
-}
-
-export async function checkCodexSandbox(image: string) {
-  const workspace = await mkdtemp(resolve(tmpdir(), 'hub-codex-probe-'));
-  try {
-    const options = { image, workspace, network: 'none', timeoutSeconds: 20, maxOutputBytes: 8192 };
-    const version = await runSandbox(
-      options,
-      ['codex', '--version'],
-      '',
-      new AbortController().signal,
-    );
-    if (version.code !== 0 || version.output.trim() !== `codex-cli ${codexVersion}`)
-      return { ready: false, reason: 'CODEX_VERSION_MISMATCH' };
-    const sandbox = await runSandbox(
-      options,
-      [
-        'codex',
-        'sandbox',
-        'linux',
-        '-c',
-        'sandbox_mode="workspace-write"',
-        '--',
-        'node',
-        '-e',
-        'process.stdout.write("sandbox-ready")',
-      ],
-      '',
-      new AbortController().signal,
-    );
-    return {
-      ready: sandbox.code === 0 && sandbox.output === 'sandbox-ready',
-      reason: sandbox.code === 0 ? 'OK' : 'NAMESPACE_SANDBOX_UNAVAILABLE',
-    };
-  } catch {
-    return { ready: false, reason: 'RUNNER_PROBE_FAILED' };
-  } finally {
-    await rm(workspace, { recursive: true, force: true });
-  }
 }
 
 export class CodexAdapter implements AgentAdapter {
@@ -248,6 +86,7 @@ export class CodexAdapter implements AgentAdapter {
             timeoutSeconds: 20,
             maxOutputBytes: 8192,
             codexAuthDirectory: auth.directory,
+            seccompProfilePath: codexSeccompPath,
           },
           ['codex', ...fileCredentialArguments, 'login', 'status'],
           '',
@@ -274,6 +113,7 @@ export class CodexAdapter implements AgentAdapter {
           maxOutputBytes: spec.limits.maxOutputBytes,
           env: auth.mode === 'api-key' ? { CODEX_API_KEY: auth.apiKey } : {},
           codexAuthDirectory: auth.mode === 'chatgpt' ? auth.directory : undefined,
+          seccompProfilePath: codexSeccompPath,
         },
         codexExecArguments(),
         instruction,
