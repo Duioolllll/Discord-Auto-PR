@@ -1,0 +1,19 @@
+{
+  "name": "@hub/control-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --use-env-proxy --env-file-if-exists=../../.env --conditions=development --import tsx src/main.ts",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@hub/contracts": "workspace:*",
+    "@hub/db": "workspace:*",
+    "@hub/github": "workspace:*",
+    "@hub/orchestrator": "workspace:*",
+    "@hub/policy": "workspace:*",
+    "@hub/queue": "workspace:*",
+    "fastify": "5.12.7",
+    "zod": "4.6.7"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@hub/queue",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "bullmq": "5.81.5",
+    "ioredis": "5.11.1"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --clean"
+  }
+}

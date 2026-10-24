@@ -1,0 +1,231 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Repository {
+  id             String @id @default(uuid())
+  fullName       String @unique
+  installationId String
+  mergeInstallationId String?
+  enabled        Boolean @default(true)
+  baseBranch     String @default("main")
+  requiredChecks String[] @default([])
+  allowedEngines String[] @default(["codex"])
+  maxReviewIterations Int @default(3)
+  verifiedAt     DateTime?
+  budget         Budget?
+  jobs           Job[]
+  roles          RoleBinding[]
+}
+
+model RoleBinding {
+  id           String @id @default(uuid())
+  actorId      String
+  repositoryId String
+  role         String
+  repository   Repository @relation(fields: [repositoryId], references: [id])
+  @@unique([actorId, repositoryId])
+}
+
+model Job {
+  id                String @id @default(uuid())
+  externalRequestId String @unique
+  fingerprint       String
+  repositoryId      String
+  actorId           String
+  instruction       String
+  engine            String
+  kind              String
+  status            String @default("QUEUED")
+  version           Int @default(0)
+  attemptSequence   Int @default(0)
+  errorCode         String?
+  baseSha           String?
+  maxCostCents      Int @default(500)
+  timeoutSeconds    Int @default(600)
+  reviewIterations  Int @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  repository        Repository @relation(fields: [repositoryId], references: [id])
+  attempts          JobAttempt[]
+  events            JobEvent[]
+  approvals         Approval[]
+  pullRequest       PRLink?
+  steps             JobStep[]
+  reservation       BudgetReservation?
+  usage             UsageSample[]
+  mergeRecord       MergeRecord?
+  @@index([status, createdAt])
+}
+
+model Worker {
+  id            String @id @default(uuid())
+  name          String
+  tokenHash     String @unique
+  engines       String[]
+  maxConcurrent Int
+  heartbeatAt   DateTime @default(now())
+  draining      Boolean @default(false)
+  attempts      JobAttempt[]
+}
+
+model JobAttempt {
+  id            String @id @default(uuid())
+  jobId         String
+  workerId      String
+  leaseVersion  Int
+  leaseHash     String
+  expiresAt     DateTime
+  status        String @default("LEASED")
+  result        Json?
+  createdAt     DateTime @default(now())
+  job           Job @relation(fields: [jobId], references: [id])
+  worker        Worker @relation(fields: [workerId], references: [id])
+  @@unique([jobId, leaseVersion])
+  @@index([status, expiresAt])
+  @@index([workerId, status])
+}
+
+model JobEvent {
+  id           String @id @default(uuid())
+  jobId        String
+  eventId      String @unique
+  kind         String
+  message      String
+  sequence     Int @unique @default(autoincrement())
+  createdAt    DateTime @default(now())
+  job          Job @relation(fields: [jobId], references: [id])
+  @@index([jobId, createdAt])
+}
+
+model WebhookInbox {
+  id          String @id @default(uuid())
+  provider    String
+  deliveryId  String
+  event       String
+  payloadHash String
+  payload     Json @default("{}")
+  processedAt DateTime?
+  receivedAt  DateTime @default(now())
+  @@unique([provider, deliveryId])
+}
+
+model TransactionOutbox {
+  id          String @id @default(uuid())
+  topic       String
+  payload     Json
+  createdAt   DateTime @default(now())
+  publishedAt DateTime?
+  attempts    Int @default(0)
+  nextAttemptAt DateTime @default(now())
+  lastError   String?
+  @@index([publishedAt, createdAt])
+}
+
+model Identity {
+  id          String @id @default(uuid())
+  actorId     String @unique
+  githubId    String @unique
+  githubLogin String
+  verifiedAt  DateTime @default(now())
+}
+
+model Budget {
+  id           String @id @default(uuid())
+  repositoryId String @unique
+  limitCents   Int
+  reservedCents Int @default(0)
+  spentCents   Int @default(0)
+  repository   Repository @relation(fields: [repositoryId], references: [id])
+}
+
+model BudgetReservation {
+  id        String @id @default(uuid())
+  jobId     String @unique
+  cents     Int
+  status    String @default("RESERVED")
+  job       Job @relation(fields: [jobId], references: [id])
+}
+
+model UsageSample {
+  id             String @id @default(uuid())
+  jobId          String
+  eventId        String @unique
+  source         String
+  amountMicros   Int
+  currency       String @default("USD")
+  pricingVersion String
+  inputTokens    Int?
+  outputTokens   Int?
+  createdAt      DateTime @default(now())
+  job            Job @relation(fields: [jobId], references: [id])
+}
+
+model PRLink {
+  id        String @id @default(uuid())
+  jobId     String @unique
+  number    Int
+  branch    String @unique
+  url       String
+  headSha   String
+  baseSha   String
+  job       Job @relation(fields: [jobId], references: [id])
+}
+
+model JobStep {
+  id        String @id @default(uuid())
+  jobId     String
+  key       String
+  inputHash String
+  status    String @default("PENDING")
+  result    Json?
+  createdAt DateTime @default(now())
+  job       Job @relation(fields: [jobId], references: [id])
+  @@unique([jobId, key])
+}
+
+model MergeRecord {
+  id        String @id @default(uuid())
+  jobId     String @unique
+  sha       String
+  actorId   String
+  headSha   String
+  mergedAt  DateTime @default(now())
+  job       Job @relation(fields: [jobId], references: [id])
+}
+
+model DeadLetter {
+  id        String @id @default(uuid())
+  eventId   String @unique
+  topic     String
+  reason    String
+  createdAt DateTime @default(now())
+}
+
+model Approval {
+  id        String @id @default(uuid())
+  jobId     String
+  headSha   String
+  actorId   String
+  githubId  String @default("")
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  job       Job @relation(fields: [jobId], references: [id])
+  @@unique([jobId, headSha, actorId])
+}
+
+model AuditEvent {
+  id         String @id @default(uuid())
+  actorId    String
+  action     String
+  resourceId String
+  details    Json
+  createdAt  DateTime @default(now())
+  @@index([resourceId, createdAt])
+}

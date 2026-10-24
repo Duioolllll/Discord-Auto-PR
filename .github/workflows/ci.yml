@@ -1,0 +1,41 @@
+name: Foundation CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+        env:
+          POSTGRES_USER: hub
+          POSTGRES_PASSWORD: hub_local_only
+          POSTGRES_DB: hub
+        ports: ['5432:5432']
+        options: --health-cmd 'pg_isready -U hub -d hub' --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7.4.5-alpine@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
+        ports: ['6379:6379']
+        options: --health-cmd 'redis-cli ping' --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .node-version
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm setup:local
+      - run: pnpm db:generate
+      - run: pnpm db:migrate
+      - run: pnpm runner:build
+      - run: docker pull node:24.19.0-bookworm-slim@sha256:a9f5f7c91a432850b2a8a7797adf5eadb6c733ceed61167806cee7ea7fbc29df
+      - run: pnpm format:check && pnpm lint && pnpm typecheck
+      - run: pnpm test && pnpm test:integration
+      - run: pnpm audit --audit-level=high
+      - run: pnpm build
+      - run: pnpm test:e2e
+        env:
+          HUB_PACKAGED_CHROMIUM: 'true'

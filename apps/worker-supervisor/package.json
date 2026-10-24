@@ -1,0 +1,16 @@
+{
+  "name": "@hub/worker-supervisor",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --use-env-proxy --env-file-if-exists=../../.env --conditions=development --import tsx src/main.ts",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@hub/agent-core": "workspace:*",
+    "@hub/contracts": "workspace:*",
+    "@hub/agent-codex": "workspace:*",
+    "zod": "4.6.7",
+    "ignore": "7.0.14"
+  }
+}

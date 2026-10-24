@@ -1,0 +1,13 @@
+{
+  "name": "@hub/discord-bot",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --use-env-proxy --env-file-if-exists=../../.env --conditions=development --import tsx src/main.ts",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@hub/contracts": "workspace:*",
+    "discord.js": "14.27.0"
+  }
+}

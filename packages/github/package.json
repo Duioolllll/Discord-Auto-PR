@@ -1,0 +1,20 @@
+{
+  "name": "@hub/github",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --clean"
+  },
+  "dependencies": {
+    "@octokit/app": "16.1.4",
+    "@hub/contracts": "workspace:*",
+    "@hub/policy": "workspace:*"
+  }
+}

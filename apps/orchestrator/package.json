@@ -1,0 +1,23 @@
+{
+  "name": "@hub/orchestrator",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/service.ts",
+      "development": "./src/service.ts",
+      "default": "./dist/service.js"
+    }
+  },
+  "scripts": {
+    "dev": "node --use-env-proxy --env-file-if-exists=../../.env --conditions=development --import tsx src/main.ts",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@hub/contracts": "workspace:*",
+    "@hub/db": "workspace:*",
+    "@hub/policy": "workspace:*",
+    "@hub/queue": "workspace:*",
+    "@hub/github": "workspace:*"
+  }
+}
