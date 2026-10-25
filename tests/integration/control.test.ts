@@ -12,6 +12,8 @@ import { WorkerClient } from '../../apps/worker-supervisor/src/client.js';
 import { FakeGitHub } from '../fixtures/github.js';
 import { supervise } from '../../apps/worker-supervisor/src/supervisor.js';
 import { synchronizePullRequests } from '../../apps/orchestrator/src/reconcile.js';
+import { handleCommand } from '../../apps/discord-bot/src/commands.js';
+import { createControlClient } from '../../apps/discord-bot/src/control-client.js';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -103,6 +105,116 @@ afterAll(async () => {
 });
 
 describe('control API with real PostgreSQL and Redis', () => {
+  it('normalizes Discord refactor links before API validation without requiring a linked GitHub identity', async () => {
+    const repositoryLink = 'https://github.com/test/installed';
+    const rawResponse = await post('/jobs', { ...body(), repository: repositoryLink }, bot);
+    expect(rawResponse.statusCode).toBe(400);
+    expect(rawResponse.json()).toMatchObject({
+      error: 'INVALID_REQUEST',
+      issues: expect.arrayContaining([expect.objectContaining({ path: ['repository'] })]),
+    });
+    // GitHub identity linking is required for approval, not for requesting a refactor.
+    await db.identity.deleteMany();
+    const server = buildApp({ db, config, pingRedis: () => queue.connection.ping(), github });
+    const base = await server.listen({ host: '127.0.0.1', port: 0 });
+    try {
+      const interaction = {
+        commandName: 'refactor',
+        id: randomUUID(),
+        user: { id: userId },
+        options: {
+          getString: (key: string) =>
+            key === 'repository' ? `[installed](${repositoryLink})` : '코드 검토',
+        },
+        deferReply: vi.fn(async () => undefined),
+        editReply: vi.fn(async () => undefined),
+      };
+      await handleCommand(
+        interaction as unknown as Parameters<typeof handleCommand>[0],
+        createControlClient(base, config.BOT_API_TOKEN),
+      );
+      const job = await db.job.findUniqueOrThrow({
+        where: { externalRequestId: `discord:${interaction.id}` },
+        include: { repository: true },
+      });
+      expect(job).toMatchObject({
+        kind: 'refactor',
+        instruction: '코드 검토',
+        status: 'QUEUED',
+        actorId: `discord:${userId}`,
+        repository: { fullName: 'test/installed' },
+      });
+      expect(interaction.editReply).toHaveBeenCalledWith({
+        content: `작업 ${job.id}: QUEUED`,
+        allowedMentions: { parse: [] },
+      });
+      expect(github.writes).toBe(0);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('shows distinct Discord errors for real repository, role, budget and bot authentication failures', async () => {
+    const server = buildApp({ db, config, pingRedis: () => queue.connection.ping(), github });
+    const base = await server.listen({ host: '127.0.0.1', port: 0 });
+    try {
+      await db.budget.updateMany({ data: { limitCents: 0 } });
+      for (const scenario of [
+        {
+          repository: 'test/missing',
+          userId,
+          token: config.BOT_API_TOKEN,
+          code: 'REPOSITORY_NOT_INSTALLED',
+          status: 403,
+        },
+        {
+          repository: 'test/installed',
+          userId: '987654321098765432',
+          token: config.BOT_API_TOKEN,
+          code: 'FORBIDDEN',
+          status: 403,
+        },
+        {
+          repository: 'test/installed',
+          userId,
+          token: config.BOT_API_TOKEN,
+          code: 'BUDGET_EXCEEDED',
+          status: 402,
+        },
+        {
+          repository: 'test/installed',
+          userId,
+          token: 'invalid-test-token',
+          code: 'UNAUTHORIZED',
+          status: 401,
+        },
+      ]) {
+        const interaction = {
+          commandName: 'refactor',
+          id: randomUUID(),
+          user: { id: scenario.userId },
+          options: {
+            getString: (key: string) => (key === 'repository' ? scenario.repository : '코드 검토'),
+          },
+          deferReply: vi.fn(async () => undefined),
+          editReply: vi.fn(async () => undefined),
+        };
+        await handleCommand(
+          interaction as unknown as Parameters<typeof handleCommand>[0],
+          createControlClient(base, scenario.token),
+        );
+        expect(interaction.editReply).toHaveBeenCalledWith({
+          content: expect.stringContaining(`${scenario.code} · HTTP ${scenario.status}`),
+          allowedMentions: { parse: [] },
+        });
+      }
+      expect(await db.job.count()).toBe(0);
+      expect(github.writes).toBe(0);
+    } finally {
+      await server.close();
+    }
+  });
+
   it('keeps an uncertain merge locked until explicit outcome reconciliation', async () => {
     const created = await post('/jobs', body(), bot);
     const jobId = created.json().job.id;

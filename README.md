@@ -263,6 +263,17 @@ pnpm dev:bot
 지원 명령: `/develop`, `/refactor`, `/status`, `/logs`, `/workers`, `/cancel`, `/approve`, `/merge`, `/cost`.
 아직 `/fix` 이슈 수집과 PR 대상 `/review`, 완료 스레드 알림은 구현하지 않았습니다.
 
+리팩터링 요청은 다음처럼 입력합니다. 명령 이름은 `/refactor`이며 `/refacter`가 아닙니다.
+`repository`에는 전체 `owner/repository`를 입력하세요. GitHub 저장소 URL 또는 링크를 붙여 넣어도 봇이 이 형식으로 변환합니다.
+
+```text
+/refactor repository:Duioolllll/Discord-Auto-PR instruction:중복 코드를 정리하고 기존 테스트를 유지해 줘
+```
+
+`/refactor`는 코드 변경·PR을 만들 수 있는 명령입니다. 읽기 전용 코드 검토 명령은 아직 없습니다.
+실패하면 Discord 응답의 `오류 코드`에 따라 [문제 해결 안내](docs/getting-started.md#discord-요청이-거절될-때)를 확인하세요.
+단순 작업 요청에 GitHub 계정 연결이 필수인 것은 아닙니다. 계정 연결은 승인·병합 단계에서 확인합니다.
+
 ## 실제 Codex 워커
 
 기본 인증은 **Codex CLI의 ChatGPT 계정 로그인**입니다. OpenAI API key는 필수가 아닙니다.

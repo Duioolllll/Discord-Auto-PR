@@ -541,6 +541,17 @@ Discord에서는 다음처럼 입력합니다. `repository`, `instruction`은 Di
 /develop repository:본인GitHub아이디/작업할저장소 instruction:기존 테스트를 유지하면서 작은 기능을 추가해 줘
 ```
 
+리팩터링은 `/refactor`를 선택합니다. `/refacter`라는 명령은 없습니다.
+저장소 이름만 입력하지 말고 소유자를 포함하세요. GitHub 저장소 URL, Discord의 링크 또는 Markdown 링크도 자동 변환합니다.
+브랜치·파일·이슈 URL은 저장소 URL이 아니므로 거절합니다.
+
+```text
+/refactor repository:Duioolllll/Discord-Auto-PR instruction:중복 코드를 정리하고 기존 테스트를 유지해 줘
+```
+
+`/refactor`는 코드를 수정하고 PR을 생성할 수 있습니다. **읽기 전용 `/review` 명령은 아직 구현되지 않았습니다.**
+작업 조회·취소·승인·병합의 `job` 옵션에는 생성 응답의 전체 UUID를 입력합니다.
+
 정상 흐름은 `QUEUED → RUNNING → PR_OPEN`이며, 이후 CI·리뷰 상태에 따라 `CI_WAIT`, `APPROVAL_WAIT` 등으로 바뀝니다.
 작업 상세 화면에서 단계별 기록과 PR 링크를 확인합니다.
 워커가 없으면 `QUEUED`에서 기다리며, 별도 테스트가 실패하면 PR을 발행하지 않습니다.
@@ -604,6 +615,31 @@ pnpm build
 릴리스 변경 안내와 `.env.example`에 새 설정이 생겼는지도 확인하세요.
 
 ## 자주 막히는 부분
+
+### Discord 요청이 거절될 때
+
+봇은 실패 응답에 `오류 코드: REPOSITORY_NOT_INSTALLED · HTTP 403`처럼 원인과 조치 방법을 표시합니다.
+전체 API 응답이나 토큰을 Discord에 출력하지 않습니다.
+
+| 오류 코드                      | 조치                                                                                                                              |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `INVALID_REPOSITORY`           | `Duioolllll/Discord-Auto-PR` 또는 `https://github.com/Duioolllll/Discord-Auto-PR` 입력. 저장소 이름만 입력하면 안 됨              |
+| `INVALID_REQUEST`              | `instruction`은 공백이 아닌 1~20,000자, `job`은 전체 UUID인지 확인                                                                |
+| `REPOSITORY_NOT_INSTALLED`     | 7단계에서 해당 저장소와 **실제 개발 App installation ID**를 등록했는지, 저장소가 활성화되어 있는지 확인                           |
+| `FORBIDDEN`                    | 8단계의 `SEED_DISCORD_USER_ID`가 명령을 실행한 본인 ID인지 확인. 일반 작업 요청에는 해당 저장소의 developer/admin 역할이 필요     |
+| `BUDGET_EXCEEDED`              | 가용 예산과 예약액 확인. 기본 새 작업 예약액은 500센트이며 이미 예약한 작업도 한도에 포함됨                                       |
+| `UNAUTHORIZED`                 | API와 봇의 `BOT_API_TOKEN`이 일치하는지 확인하고 변경한 서비스를 재시작. Discord Developer Portal의 봇 토큰과는 다른 값           |
+| `CONTROL_API_UNREACHABLE`      | API가 실행 중인지, `CONTROL_API_URL`의 주소·포트가 맞는지 확인. 봇이 다른 PC에 있다면 `localhost`는 API 서버가 아님               |
+| `CONTROL_API_INVALID_RESPONSE` | `CONTROL_API_URL`이 대시보드 3000이 아닌 API 기본 3001을 가리키는지 확인                                                          |
+| `GITHUB_ACCOUNT_LINK_REQUIRED` | 승인·병합을 실행하는 계정의 [GitHub 연결 절차](approval-setup.md) 확인. `/develop`·`/refactor` 생성 단계에는 연결을 요구하지 않음 |
+
+연결 실패·타임아웃이어도 서버가 쓰기 요청을 이미 처리했을 수 있습니다. 재요청 전에 대시보드나 `/status`에서 작업/PR 상태를 확인하세요.
+기존의 “요청을 처리하지 못했습니다. 저장소 권한…” 메시지만 나온다면 이전 봇 코드가 실행 중인 것입니다.
+저장소 루트에서 `git pull --ff-only`, `pnpm install --frozen-lockfile`, `pnpm build` 후 봇 프로세스를 재시작하세요.
+소스로 실행한다면 기존 `pnpm dev:bot` 터미널에서 Ctrl+C 후 `pnpm dev:bot`을 다시 실행합니다.
+명령 이름·옵션은 그대로이므로 이 수정으로 명령을 재등록할 필요는 없습니다.
+
+### 다른 설치·실행 문제
 
 | 증상                                             | 먼저 확인할 것                                                                                 |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------- |

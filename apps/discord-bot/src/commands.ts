@@ -1,4 +1,11 @@
 import { SlashCommandBuilder, type ChatInputCommandInteraction } from 'discord.js';
+import {
+  commandFailure,
+  ControlApiError,
+  normalizeRepository,
+  type ControlClient,
+} from './control-client.js';
+export type { ControlClient } from './control-client.js';
 
 const development = ['develop', 'refactor'];
 const jobCommands = ['status', 'logs', 'cancel', 'approve', 'merge'];
@@ -35,14 +42,6 @@ export const commands = [
   new SlashCommandBuilder().setName('workers').setDescription('관리자용 워커 현황'),
   new SlashCommandBuilder().setName('cost').setDescription('관리자용 비용 분류별 현황'),
 ];
-export interface ControlClient {
-  request(
-    path: string,
-    userId: string,
-    method: string,
-    body?: unknown,
-  ): Promise<Record<string, unknown>>;
-}
 export async function handleCommand(
   interaction: Pick<
     ChatInputCommandInteraction,
@@ -56,9 +55,11 @@ export async function handleCommand(
   try {
     let content: string;
     if (development.includes(command)) {
+      const repository = normalizeRepository(interaction.options.getString('repository', true));
+      if (!repository) throw new ControlApiError('INVALID_REPOSITORY');
       const response = await client.request('/jobs', interaction.user.id, 'POST', {
         externalRequestId: `discord:${interaction.id}`,
-        repository: interaction.options.getString('repository', true),
+        repository,
         instruction: interaction.options.getString('instruction', true),
         kind: command,
         engine: 'codex',
@@ -113,10 +114,9 @@ export async function handleCommand(
       content: (content || '조회 결과가 없습니다.').slice(0, 1800),
       allowedMentions: { parse: [] },
     });
-  } catch {
+  } catch (error) {
     await interaction.editReply({
-      content:
-        '요청을 처리하지 못했습니다. 저장소 권한, 작업 ID, 계정 연결과 GitHub 정책을 확인해 주세요.',
+      content: commandFailure(error, command),
       allowedMentions: { parse: [] },
     });
   }
