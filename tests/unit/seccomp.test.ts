@@ -12,6 +12,7 @@ import {
   validateSeccompPolicy,
   codexSandboxArguments,
   probeDiagnostic,
+  codexAppArmorProfile,
 } from '@hub/agent-codex';
 
 interface Rule {
@@ -158,4 +159,52 @@ it('classifies stderr without returning supplied text or credentials', () => {
   const denied = "bwrap: Can't make / slave: Permission denied";
   expect(classifyProbeFailure(denied)).toBe('NAMESPACE_SANDBOX_UNAVAILABLE');
   expect(probeDiagnostic(denied)).toBe('BWRAP_MOUNT_DENIED');
+});
+
+it('keeps the AppArmor baseline except the required namespace mount operations', async () => {
+  const base = await readFile('infra/security/docker-default.apparmor', 'utf8');
+  const custom = await readFile('infra/security/codex.apparmor', 'utf8');
+  expect(custom).toBe(
+    base
+      .replaceAll('docker-default', codexAppArmorProfile)
+      .replace(
+        '  deny mount,',
+        '  # Bwrap setup only; paired with the pinned seccomp flag filters and ALL caps dropped.\n  mount,\n  pivot_root,',
+      ),
+  );
+  expect(
+    execFileSync(process.execPath, ['infra/security/generate-apparmor.mjs', '--check'], {
+      encoding: 'utf8',
+    }),
+  ).toContain('Codex AppArmor SHA-256:');
+  for (const restriction of [
+    'deny network alg',
+    'deny network vsock',
+    'deny @{PROC}/kcore',
+    'deny /sys/kernel/security/',
+  ])
+    expect(custom).toContain(restriction);
+  const options = {
+    image: `sha256:${'a'.repeat(64)}`,
+    workspace: '/tmp/isolated',
+    timeoutSeconds: 10,
+    maxOutputBytes: 1024,
+    seccompProfilePath: codexSeccompPath,
+  };
+  expect(
+    sandboxArguments('test', { ...options, apparmorProfile: codexAppArmorProfile }, [
+      'codex',
+      '--version',
+    ]),
+  ).toContain(`apparmor=${codexAppArmorProfile}`);
+  expect(() => sandboxArguments('test', { ...options, apparmorProfile: 'unconfined' }, [])).toThrow(
+    'UNAPPROVED',
+  );
+  expect(() =>
+    sandboxArguments(
+      'test',
+      { ...options, seccompProfilePath: undefined, apparmorProfile: codexAppArmorProfile },
+      [],
+    ),
+  ).toThrow('UNAPPROVED');
 });

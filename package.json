@@ -27,7 +27,7 @@
     "dev:dashboard": "pnpm --filter @hub/dashboard dev",
     "test:e2e": "playwright test",
     "runner:check": "node --env-file-if-exists=.env --conditions=development --import tsx scripts/check-runner.ts",
-    "security:check": "node infra/security/generate-seccomp.mjs --check",
+    "security:check": "node infra/security/generate-seccomp.mjs --check && node infra/security/generate-apparmor.mjs --check",
     "codex:login": "node --env-file-if-exists=.env --conditions=development --import tsx scripts/codex-login.ts",
     "codex:status": "pnpm codex:login --status"
   },

@@ -14,6 +14,7 @@ export const codexSeccompPath = fileURLToPath(
 );
 export const codexSeccompDigest =
   '222c2fe09326c903267c96c71c99535f395a95caf2956c74dbe6eb22103eb26e';
+export const codexAppArmorProfile = 'discord-hub-codex-v1';
 export type ProbeReason =
   | 'CODEX_VERSION_MISMATCH'
   | 'CODEX_HOME_UNAVAILABLE'
@@ -42,6 +43,7 @@ export interface SandboxOptions {
   codexAuthDirectory?: string;
   // Omit for ordinary verification containers, which retain Docker's default seccomp.
   seccompProfilePath?: string;
+  apparmorProfile?: string;
 }
 
 export function policyDigest(profile: unknown) {
@@ -113,6 +115,11 @@ export function sandboxArguments(name: string, options: SandboxOptions, command:
     throw new Error('Only explicit Codex API authentication can be passed to the container');
   if (options.seccompProfilePath && !isAbsolute(options.seccompProfilePath))
     throw new RunnerFailure('SECCOMP_POLICY_INVALID', 'ABSOLUTE_PROFILE_PATH_REQUIRED');
+  if (
+    options.apparmorProfile &&
+    (!options.seccompProfilePath || options.apparmorProfile !== codexAppArmorProfile)
+  )
+    throw new RunnerFailure('NAMESPACE_SANDBOX_UNAVAILABLE', 'UNAPPROVED_APPARMOR_PROFILE');
   if (options.codexAuthDirectory) {
     if (!isAbsolute(options.codexAuthDirectory) || /[\n\r,\0]/.test(options.codexAuthDirectory))
       throw new Error('Invalid Codex authentication directory');
@@ -133,6 +140,7 @@ export function sandboxArguments(name: string, options: SandboxOptions, command:
     ...(options.seccompProfilePath
       ? ['--security-opt', `seccomp=${options.seccompProfilePath}`]
       : []),
+    ...(options.apparmorProfile ? ['--security-opt', `apparmor=${options.apparmorProfile}`] : []),
     '--user',
     `${uid}:${process.getgid?.() ?? 1000}`,
     '--pids-limit=128',
@@ -172,7 +180,7 @@ async function inspectContainer(name: string, options: SandboxOptions) {
       'container',
       'inspect',
       '--format',
-      '{"user":{{json .Config.User}},"image":{{json .Image}},"host":{{json .HostConfig}},"mounts":{{json .Mounts}}}',
+      '{"user":{{json .Config.User}},"image":{{json .Image}},"apparmor":{{json .AppArmorProfile}},"host":{{json .HostConfig}},"mounts":{{json .Mounts}}}',
       name,
     ],
     { timeout: 10000, maxBuffer: 131072 },
@@ -180,6 +188,7 @@ async function inspectContainer(name: string, options: SandboxOptions) {
   const spec = JSON.parse(result.stdout) as {
     user: string;
     image: string;
+    apparmor: string;
     host: {
       ReadonlyRootfs: boolean;
       Privileged: boolean;
@@ -225,6 +234,17 @@ async function inspectContainer(name: string, options: SandboxOptions) {
   )
     throw new RunnerFailure('RUNNER_PROBE_FAILED', 'CONTAINER_GUARDS_NOT_APPLIED');
   const seccomp = h.SecurityOpt.filter((option) => option.startsWith('seccomp='));
+  const apparmor = h.SecurityOpt.filter((option) => option.startsWith('apparmor='));
+  if (options.apparmorProfile) {
+    if (
+      spec.apparmor !== codexAppArmorProfile ||
+      apparmor.length !== 1 ||
+      apparmor[0] !== `apparmor=${codexAppArmorProfile}`
+    )
+      throw new RunnerFailure('NAMESPACE_SANDBOX_UNAVAILABLE', 'APPARMOR_PROFILE_NOT_APPLIED');
+  } else if (apparmor.length) {
+    throw new RunnerFailure('NAMESPACE_SANDBOX_UNAVAILABLE', 'UNEXPECTED_APPARMOR_OVERRIDE');
+  }
   if (options.seccompProfilePath) {
     try {
       if (
@@ -263,7 +283,13 @@ export async function runSandbox(
   signal: AbortSignal,
 ) {
   const workspace = await realpath(options.workspace);
-  options = { ...options, workspace };
+  options = {
+    ...options,
+    workspace,
+    apparmorProfile: options.seccompProfilePath
+      ? (options.apparmorProfile ?? process.env.HUB_CODEX_APPARMOR_PROFILE?.trim()) || undefined
+      : options.apparmorProfile,
+  };
   if (options.codexAuthDirectory) {
     const directory = await validateCodexAuthDirectory(options.codexAuthDirectory);
     assertSeparateProfile(directory, workspace);
@@ -299,6 +325,14 @@ export async function runSandbox(
         maxBuffer: 16384,
       });
     } catch (error) {
+      if (
+        error &&
+        typeof error === 'object' &&
+        'stderr' in error &&
+        typeof error.stderr === 'string' &&
+        /apparmor/i.test(error.stderr)
+      )
+        throw new RunnerFailure('NAMESPACE_SANDBOX_UNAVAILABLE', 'APPARMOR_PROFILE_UNAVAILABLE');
       if (
         error &&
         typeof error === 'object' &&

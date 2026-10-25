@@ -79,13 +79,56 @@ pnpm security:check
 JSON의 단순 공백 변경은 허용하지만, 규칙 변경·누락·알 수 없는 정책은 거절합니다.
 정책을 승인해 변경하려면 생성기·테스트·런타임 해시를 함께 검토해야 합니다.
 
+### AppArmor가 활성화된 호스트
+
+AppArmor와 seccomp는 독립적으로 적용됩니다. Docker 기본 AppArmor 프로필의 `deny mount`는
+seccomp 예외가 있어도 Bubblewrap의 mount 준비를 거절합니다.
+GitHub hosted Ubuntu의 Docker 28.0.4 / kernel 6.17.0-1022-azure에서 이 추가 차단을 확인했습니다.
+명시적 AppArmor `deny` 규칙은 조용히 거절할 수 있으므로 audit 거절 건수 0이 허용을 뜻하지는 않습니다.
+
+이 경우 [전용 AppArmor 프로필](../infra/security/codex.apparmor)을 운영자가 명시적으로 설치·선택할 수 있습니다.
+기준은 같은 Moby commit의 AppArmor v0.2.3 [원본 template](../infra/security/docker-apparmor-template.go)이며,
+[기본 렌더링 결과](../infra/security/docker-default.apparmor)와 비교해 이름/peer를 맞추고
+**`deny mount`를 mount·pivot_root 허용으로 바꾸는 부분만** 변경합니다.
+네트워크 ALG/VSOCK 차단, proc·sys 쓰기/읽기 제한, 신호·ptrace 제어 등 다른 규칙은 유지합니다.
+
+AppArmor의 mount 허용은 그 프로필 전체에 적용됩니다. mount flags는 함께 적용하는 고정 seccomp가 제한하고,
+외부 capability가 모두 제거되어 있으므로 kernel은 외부 namespace의 mount 권한을 부여하지 않습니다.
+이 AppArmor 프로필은 **반드시 Codex seccomp와 함께만** 선택할 수 있고, 일반 검증 컨테이너에는 선택하지 않습니다.
+AppArmor 자체를 끄거나 unconfined 프로필을 사용하지 않습니다.
+
+설치 전 워커를 중지하고 다음을 실행하세요. 이 sudo 명령은 **호스트에 별도의 이름을 가진 프로필을 등록**하며
+기존 `docker-default` 프로필을 덮어쓰지 않습니다. 실제 워커는 계속 일반 사용자로 실행합니다.
+설치는 **Docker daemon이 실행되는 호스트**에서 해야 합니다. Docker Desktop처럼 daemon이 별도 VM에 있으면
+클라이언트 Ubuntu에 설치한 정책이 반영되지 않을 수 있습니다. daemon 호스트에서 정책을 관리할 수 없다면
+관리 가능한 전용 Linux 워커/VM을 사용하세요. daemon 자체에 별도 AppArmor 라벨을 사용하는 구성은 signal peer 규칙도 운영자가 검토해야 합니다.
+
+```bash
+pnpm security:check
+sudo apparmor_parser -r infra/security/codex.apparmor
+```
+
+Ubuntu에서 parser가 없다면 운영자가 `sudo apt-get install apparmor`로 준비합니다.
+커널에서 AppArmor가 비활성화된 호스트에는 이 설정이 필요 없습니다.
+AppArmor 호스트의 `.env`에 다음 항목을 추가하고 워커를 재시작합니다.
+
+```dotenv
+HUB_CODEX_APPARMOR_PROFILE=discord-hub-codex-v1
+```
+
+이 값은 미설정이면 Docker 기본값을 유지합니다. 선택할 수 있는 이름은 위 하나로 제한합니다.
+설치 누락·다른 이름·실제 적용 라벨 불일치는 실행 전 실패합니다.
+실제 검사에서도 외부·내부 `/proc/self/attr/current`가 선택한 이름의 **enforce 모드**인지 확인합니다.
+`pnpm security:check`는 원본 template 및 생성 결과도 검증합니다.
+커널에 로드된 이름이 어떤 정책인지는 호스트 관리자의 신뢰 영역이므로, 위 검증한 파일 그대로 설치해야 합니다.
+
 ## 3. 실제 컨테이너 실행 순서
 
 1. 작업 경로를 정규화하고, 로그인 프로필이 있다면 별도 경로·소유자·권한·파일 형식을 검사합니다.
 2. 고정 이미지 ID가 실제 로컬 Linux amd64 이미지 ID와 일치하는지 확인합니다. 자동 pull은 하지 않습니다.
 3. Codex용 정책을 검증한 뒤, 비공개 임시 디렉터리에 정책 사본을 만들어 Docker CLI가 사용하게 합니다.
 4. `docker create`로 컨테이너를 생성합니다. 아직 명령은 실행하지 않습니다.
-5. Docker inspect로 적용된 seccomp JSON의 해시, UID/GID, capability, mount, 네트워크·리소스 제한을 재확인합니다.
+5. Docker inspect로 적용된 seccomp JSON의 해시, 선택한 AppArmor 라벨, UID/GID, capability, mount, 네트워크·리소스 제한을 재확인합니다.
    **`Config.Env`는 조회하거나 출력하지 않습니다.**
 6. 확인된 컨테이너만 `docker start --attach`로 실행합니다.
 7. 종료·실패·취소·타임아웃·출력 초과 후 `docker rm -f`로 정리합니다. `--rm`도 함께 사용합니다.
@@ -167,6 +210,7 @@ Ubuntu에서는 테스트용으로 `sudo apt-get install build-essential`을 사
 필요 조건은 Linux amd64·cgroup v2·seccomp 지원 및 nested user/mount/PID/IPC/network namespace를 허용하는 커널/LSM입니다.
 AppArmor·SELinux·rootless Docker·userns-remap 또는 상위 컨테이너의 제한이 남아 있으면 검사에 실패할 수 있습니다.
 예를 들어 호스트 LSM이 mount를 차단하는 경우 seccomp 예외만으로 해결되지 않습니다.
+AppArmor 기본 mount 차단은 위 전용 프로필로 준비할 수 있습니다. 다른 LSM/커널 제한이 남으면
 LSM을 통째로 끄지 말고 운영자가 검토한 범위의 정책을 준비하거나 지원되는 전용 Linux VM을 사용하세요.
 
 안전하게 확인할 수 있는 정보:
@@ -228,6 +272,7 @@ docker image inspect hub-codex:0.163.0 --format '{{.Id}}'
 **마지막 명령의 새 `sha256:...` 전체 값을 `.env`의 `HUB_CODEX_IMAGE`에 반영하세요.**
 같은 `hub-codex:0.163.0` 태그여도 entrypoint 수정으로 image ID가 바뀝니다.
 기존 `.env` 전체를 예제 파일로 덮어쓰거나 로그인 프로필을 지우지 마세요.
+AppArmor가 활성화된 호스트는 앞의 전용 프로필 설치와 `.env`의 `HUB_CODEX_APPARMOR_PROFILE` 설정도 완료하세요.
 
 ```bash
 pnpm security:check

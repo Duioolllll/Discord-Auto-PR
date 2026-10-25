@@ -449,6 +449,8 @@ HUB_CODEX_IMAGE=sha256:실제_맞춤_이미지_ID pnpm runner:check
 `NAMESPACE_SANDBOX_UNAVAILABLE`이면 그 호스트에서 Codex 내부 격리를 실행할 수 없습니다.
 저장소의 정책 적용 여부, kernel namespace 설정과 LSM 제한을 확인하세요. 지원할 수 없는 호스트에서는 워커를 실행하지 않습니다.
 원인별 확인 방법은 [Runner 보안·진단 안내](runner-security.md)에 있습니다.
+AppArmor가 활성화되어 `BWRAP_MOUNT_DENIED`가 나오면 해당 안내의 전용 AppArmor 프로필 설치 절차를 진행하세요.
+기본 Docker 프로필을 끄는 대신, 별도 프로필을 설치하고 `.env`에 `HUB_CODEX_APPARMOR_PROFILE=discord-hub-codex-v1`을 지정합니다.
 Docker가 실행된다는 것과 Codex 내부 sandbox가 실행된다는 것은 별개입니다.
 
 ## 10. 워커 네트워크·프로젝트 테스트 준비 후 시작

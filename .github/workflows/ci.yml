@@ -7,6 +7,8 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      HUB_CODEX_APPARMOR_PROFILE: discord-hub-codex-v1
     services:
       postgres:
         image: postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
@@ -36,6 +38,8 @@ jobs:
       - run: pnpm db:migrate
       - run: pnpm runner:build
       - run: pnpm security:check
+      - name: Load the audited Codex AppArmor profile
+        run: sudo apparmor_parser -r infra/security/codex.apparmor
       - name: Runner host diagnostics
         run: |
           id -u

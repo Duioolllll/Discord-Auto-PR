@@ -14,3 +14,10 @@ also pins the generated profile's semantic SHA-256. Never replace it with an all
 
 The security model, syscall/flag justification, platform requirements, tests and update
 instructions are documented in [runner-security.md](../../docs/runner-security.md).
+
+AppArmor hosts can explicitly install `codex.apparmor` and select
+`HUB_CODEX_APPARMOR_PROFILE=discord-hub-codex-v1`. The template is vendored from
+Moby AppArmor v0.2.3 at the same commit. `generate-apparmor.mjs` preserves its
+restrictions except the mount/pivot_root permission needed by bwrap. This named
+profile is permitted only together with the pinned seccomp policy, never on
+ordinary verification containers. The daemon's default profile is not replaced.

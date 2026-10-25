@@ -28,6 +28,7 @@ export function classifyProbeFailure(stderr: string): ProbeReason {
 
 const diagnosticCodes = [
   'OUTER_IDENTITY',
+  'OUTER_APPARMOR',
   'OUTER_MEMORY',
   'OUTER_SWAP',
   'OUTER_PIDS',
@@ -70,6 +71,7 @@ assert.ok(process.getuid() > 0);
 for (const field of ['CapEff','CapPrm','CapBnd']) assert.match(status,new RegExp(field + ':\\s+0+\\n'));
 assert.match(status,/NoNewPrivs:\s+1/);
 assert.match(status,/Seccomp:\s+2/);
+if (outer.apparmor) assert.equal(fs.readFileSync('/proc/self/attr/current','utf8').trim(),outer.apparmor);
 assert.ok(Number(/Seccomp_filters:\s+(\d+)/.exec(status)?.[1]) > outer.filters);
 phase = 'INNER_FILESYSTEM';
 assert.throws(() => fs.writeFileSync('/home/runner/outside-sentinel','changed'));
@@ -110,6 +112,11 @@ assert.ok(process.getuid() > 0);
 for (const field of ['CapEff','CapPrm','CapBnd']) assert.match(status,new RegExp(field + ':\\s+0+\\n'));
 assert.match(status,/NoNewPrivs:\s+1/);
 assert.match(status,/Seccomp:\s+2/);
+const expectedAppArmor = ${JSON.stringify(process.env.HUB_CODEX_APPARMOR_PROFILE?.trim() || null)};
+if (expectedAppArmor) {
+  phase = 'OUTER_APPARMOR';
+  assert.equal(fs.readFileSync('/proc/self/attr/current','utf8').trim(),expectedAppArmor+' (enforce)');
+}
 phase = 'OUTER_MEMORY';
 assert.equal(fs.readFileSync('/sys/fs/cgroup/memory.max','utf8').trim(),'1073741824');
 phase = 'OUTER_SWAP';
@@ -143,7 +150,7 @@ process.env.CODEX_API_KEY='probe-fixture';
 phase = 'OUTER_NETWORK';
 const server = net.createServer((socket) => socket.end());
 server.listen(0,'127.0.0.1',() => {
-  fs.writeFileSync('/workspace/.hub-probe-outer.json',JSON.stringify({namespaces,filters:Number(/Seccomp_filters:\s+(\d+)/.exec(status)?.[1]),port:server.address().port}));
+  fs.writeFileSync('/workspace/.hub-probe-outer.json',JSON.stringify({namespaces,filters:Number(/Seccomp_filters:\s+(\d+)/.exec(status)?.[1]),port:server.address().port,apparmor:expectedAppArmor ? expectedAppArmor+' (enforce)' : null}));
   const child = spawn('codex',${JSON.stringify(codexSandboxArguments(['node', '-e', innerProbe]).slice(1))},{stdio:'inherit'});
   child.once('error',() => {fs.writeSync(2,'HUB_PROBE_CHILD_START');server.close();process.exitCode=4;});
   child.once('close',(code) => {server.close();process.exitCode=code??4;});
