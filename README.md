@@ -5,6 +5,10 @@ Discord 요청을 격리 워커에 배정하고, 변경·PR·사람 승인·병�
 실계정 연동은 아직 검증하지 않았습니다. Codex Runner는 최소 확장 seccomp 정책으로 실제 Docker·Bubblewrap 격리 검사를 통과했습니다.
 호스트별 지원 여부는 `pnpm runner:check`로 확인하세요. [Runner 보안·업데이트 안내](docs/runner-security.md), [구현 상태와 한계](docs/implementation-status.md)를 참고하세요.
 
+**Discord에서 `/` 명령이 안 보이나요?** 최신 코드의 저장소 폴더에서 `pnpm discord:setup` → `pnpm dev:bot`을 실행하세요.
+토큰 입력·서버 선택·초대·명령 등록을 안내합니다. GitHub·Codex 준비 전에도 `/help`부터 확인할 수 있습니다.
+[Discord 빠른 연결·문제 해결](docs/discord-quickstart.md)
+
 ## 처음 설치한다면 여기부터
 
 **[설치부터 실행까지 따라 하는 가이드](docs/getting-started.md)**를 먼저 읽어 주세요.
@@ -57,8 +61,8 @@ GitHub App·Discord 봇은 각 서비스에서 생성합니다. 이미지·네�
 | `GITHUB_MERGE_APP_PRIVATE_KEY_FILE` | 병합 App에서 다운로드한 PEM 파일의 절대 경로                                                                                                       |
 | `GITHUB_WEBHOOK_SECRET_FILE`        | 직접 생성한 32자 이상 임의 문자열을 저장한 파일의 절대 경로. GitHub 개발 App의 Webhook secret에도 같은 값 입력                                     |
 | `DISCORD_BOT_TOKEN_FILE`            | [Discord Developer Portal](https://discord.com/developers/applications) → 애플리케이션 → Bot → **Reset Token** → 토큰을 저장한 파일의 절대 경로    |
-| `DISCORD_APPLICATION_ID`            | Discord 애플리케이션 → General Information → **Application ID**                                                                                    |
-| `DISCORD_GUILD_ID`                  | Discord 개발자 모드 활성화 → 대상 서버 우클릭 → **서버 ID 복사**                                                                                   |
+| `DISCORD_APPLICATION_ID`            | `pnpm discord:setup`이 자동 확인. 수동 설정은 Discord 애플리케이션 → General Information → **Application ID**                                      |
+| `DISCORD_GUILD_ID`                  | 연결 도우미의 서버 목록에서 선택. 수동 설정은 개발자 모드 활성화 → 대상 서버 우클릭 → **서버 ID 복사**                                             |
 | `DISCORD_ADMIN_USER_IDS`            | 관리자 사용자 우클릭 → **사용자 ID 복사**. 여러 명은 공백 없이 쉼표로 구분                                                                         |
 | `HUB_CODEX_API_KEY_FILE`            | **ChatGPT 로그인에서는 비워 둠.** 선택형 `api-key` 모드에서만 [OpenAI API keys](https://platform.openai.com/api-keys)에서 생성한 키 파일 경로 지정 |
 | `HUB_CODEX_IMAGE`                   | `pnpm runner:build` 후 `docker image inspect hub-codex:0.163.0 --format '{{.Id}}'`로 얻은 `sha256:…` 이미지 ID                                     |
@@ -127,19 +131,20 @@ GitHub 앱 설치만으로 요청자·승인자 계정 연결이나 역할이 �
 
 ### 3. Discord 봇 생성·초대
 
-1. [Developer Portal](https://discord.com/developers/applications) → **New Application**을 만듭니다.
-2. **General Information → Application ID**를 `DISCORD_APPLICATION_ID`에 입력합니다.
-3. **Bot → Reset Token**에서 발급한 값을 비공개 파일에 저장하고 `DISCORD_BOT_TOKEN_FILE`에 경로를 지정합니다.
-4. **OAuth2 → URL Generator**에서 `bot`, `applications.commands`를 선택하고 **View Channels, Send Messages** 권한으로 대상 서버에 초대합니다.
-   현재 봇은 Guilds intent만 사용하므로 Message Content Intent를 켤 필요가 없습니다.
-5. Discord 앱의 **사용자 설정 → 고급 → 개발자 모드**를 켜고 서버·사용자 우클릭 메뉴에서 ID를 복사합니다.
-   각각 `DISCORD_GUILD_ID`, `DISCORD_ADMIN_USER_IDS`에 입력합니다.
-6. 설정 후 명령을 등록하고 봇을 시작합니다. 등록 명령은 해당 서버의 기존 애플리케이션 명령 목록을 갱신합니다.
+1. [Developer Portal](https://discord.com/developers/applications)에서 앱을 만들고 **Bot → Reset Token**으로 봇 토큰을 준비합니다.
+2. 저장소 루트에서 연결 도우미를 실행합니다. 토큰은 숨김 입력하고 서버는 목록에서 선택합니다. Application ID·초대 링크·파일 저장·명령 등록을 도우미가 처리합니다.
 
-   ```sh
-   pnpm --filter @hub/discord-bot dev --register-commands
-   pnpm dev:bot
-   ```
+```sh
+pnpm discord:setup
+pnpm dev:bot
+```
+
+3. `Discord 봇 온라인` 확인 후 선택한 서버에서 `/` → **`/help`** → **`/ping`**을 선택합니다.
+
+봇을 실행할 때도 명령을 자동 등록하므로 별도 등록 명령이 필요 없습니다.
+`/` 목록에 봇 명령이 없다면 **`pnpm discord:check`**로 토큰·서버·등록·API 연결을 구분해서 확인하세요.
+저장소와 최근 작업은 명령 옵션의 추천 목록에서 선택할 수 있습니다.
+GitHub·Codex 설정 없이 `/help`부터 확인할 수 있습니다. [쉬운 Discord 연결·문제 해결 가이드](docs/discord-quickstart.md)를 참고하세요.
 
 ### 4. Codex CLI 로그인·워커 설정
 
@@ -252,15 +257,15 @@ App key는 raw 환경변수 또는 `*_PRIVATE_KEY_FILE`로 가리키는 secret-m
 GitHub branch protection/Rulesets 및 필수 리뷰를 별도로 설정해야 하며 Discord 승인으로 대체하지 않습니다.
 
 Discord 사용에는 bot token/application/guild 설정과 저장소 RoleBinding이 필요합니다.
-관리자 명령은 서버 설정의 `DISCORD_ADMIN_USER_IDS` 또는 적절한 서버 역할로 제한합니다.
-운영자가 명시적으로 명령을 등록할 때:
+`/workers`는 API의 `DISCORD_ADMIN_USER_IDS`에 등록한 관리자만 사용할 수 있습니다. `/cost`는 전역 또는 저장소 관리자에게 허용합니다.
+연결 도우미와 봇 실행:
 
 ```sh
-pnpm --filter @hub/discord-bot dev --register-commands
+pnpm discord:setup
 pnpm dev:bot
 ```
 
-지원 명령: `/develop`, `/refactor`, `/status`, `/logs`, `/workers`, `/cancel`, `/approve`, `/merge`, `/cost`.
+지원 명령: `/help`, `/ping`, `/develop`, `/refactor`, `/status`, `/logs`, `/workers`, `/cancel`, `/approve`, `/merge`, `/cost`.
 아직 `/fix` 이슈 수집과 PR 대상 `/review`, 완료 스레드 알림은 구현하지 않았습니다.
 
 리팩터링 요청은 다음처럼 입력합니다. 명령 이름은 `/refactor`이며 `/refacter`가 아닙니다.

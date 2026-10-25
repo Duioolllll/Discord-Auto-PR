@@ -12,7 +12,7 @@ import { WorkerClient } from '../../apps/worker-supervisor/src/client.js';
 import { FakeGitHub } from '../fixtures/github.js';
 import { supervise } from '../../apps/worker-supervisor/src/supervisor.js';
 import { synchronizePullRequests } from '../../apps/orchestrator/src/reconcile.js';
-import { handleCommand } from '../../apps/discord-bot/src/commands.js';
+import { handleCommand, handleAutocomplete } from '../../apps/discord-bot/src/commands.js';
 import { createControlClient } from '../../apps/discord-bot/src/control-client.js';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -105,6 +105,48 @@ afterAll(async () => {
 });
 
 describe('control API with real PostgreSQL and Redis', () => {
+  it('keeps Discord connection checks and autocomplete within the actual user repository roles', async () => {
+    await db.repository.create({ data: { fullName: 'private/other', installationId: '43' } });
+    const server = buildApp({ db, config, pingRedis: () => queue.connection.ping(), github });
+    const base = await server.listen({ host: '127.0.0.1', port: 0 });
+    try {
+      const api = createControlClient(base, config.BOT_API_TOKEN);
+      const respond = vi.fn();
+      const input = {
+        commandName: 'develop',
+        user: { id: userId },
+        options: { getFocused: () => ({ name: 'repository', value: '' }) },
+        respond,
+      } as unknown as Parameters<typeof handleAutocomplete>[0];
+      await handleAutocomplete(input, api);
+      expect(respond).toHaveBeenCalledWith([{ name: 'test/installed', value: 'test/installed' }]);
+      const ping = {
+        commandName: 'ping',
+        id: randomUUID(),
+        user: { id: userId },
+        options: {},
+        deferReply: vi.fn(async () => undefined),
+        editReply: vi.fn(),
+      } as unknown as Parameters<typeof handleCommand>[0];
+      await handleCommand(ping, api);
+      expect(ping.editReply).toHaveBeenCalledWith({
+        content: expect.stringContaining('활성 저장소: 1개'),
+        allowedMentions: { parse: [] },
+      });
+      await handleAutocomplete(
+        { ...input, user: { id: '987654321098765432' } } as unknown as Parameters<
+          typeof handleAutocomplete
+        >[0],
+        api,
+      );
+      expect(respond).toHaveBeenLastCalledWith([]);
+      expect(await db.job.count()).toBe(0);
+      expect(github.writes).toBe(0);
+    } finally {
+      await server.close();
+    }
+  });
+
   it('normalizes Discord refactor links before API validation without requiring a linked GitHub identity', async () => {
     const repositoryLink = 'https://github.com/test/installed';
     const rawResponse = await post('/jobs', { ...body(), repository: repositoryLink }, bot);

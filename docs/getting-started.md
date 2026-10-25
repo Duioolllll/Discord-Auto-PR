@@ -323,6 +323,19 @@ ChatGPT 사용 한도와 이 앱의 예산 예약은 별도입니다.
 
 ## 8. Discord 봇 연결
 
+**처음에는 [Discord 빠른 연결](discord-quickstart.md)로 진행하는 것을 권장합니다.**
+Developer Portal에서 Bot 토큰만 준비하고 아래 명령을 실행하면, 숨김 토큰 입력·Application ID 확인·서버 선택·초대 링크·명령 등록을 순서대로 처리합니다.
+GitHub·워커 준비 전에도 `/help`부터 확인할 수 있습니다.
+
+```bash
+pnpm discord:setup
+pnpm dev:bot
+```
+
+봇 시작 시 명령이 자동 등록됩니다. `Discord 봇 온라인` 확인 후 대상 서버에서 `/`를 눌러 `/help`, `/ping`을 선택하세요.
+명령 목록이 없으면 `pnpm discord:check`를 실행하고 [명령이 안 보일 때](discord-quickstart.md#를-눌러도-명령이-안-보이면)를 확인하세요.
+아래는 수동 설정과 저장소 역할 설정 방법입니다. 도우미로 저장했다면 토큰·Application ID·서버 ID를 다시 입력할 필요는 없습니다.
+
 대시보드만 사용할 경우 이 단계는 건너뛸 수 있습니다.
 
 1. [Discord Developer Portal](https://discord.com/developers/applications) → **New Application**을 만듭니다.
@@ -366,7 +379,7 @@ SEED_REPOSITORY=본인GitHub아이디/작업할저장소 \
 이 명령은 해당 Discord 사용자에 저장소의 developer 역할을 부여합니다. 일반 요청자에게 전역 관리자 권한을 줄 필요는 없습니다.
 기존 등록을 갱신하는 명령이며, 위처럼 예산을 생략하면 기존 예산은 유지됩니다.
 
-명령 등록은 한 번 실행하고 종료되기를 기다립니다.
+봇 시작 시 명령을 자동 등록합니다. 별도 등록만 실행하고 종료하려는 운영자는 다음 호환 명령을 사용할 수 있습니다.
 
 ```bash
 pnpm --filter @hub/discord-bot dev --register-commands
@@ -380,7 +393,8 @@ pnpm --filter @hub/discord-bot dev --register-commands
 pnpm dev:bot
 ```
 
-`Discord bot connected.`를 확인하고 Discord 서버에서 `/status` 등 이 봇의 명령이 나타나는지 확인합니다.
+`Discord 봇 온라인`을 확인하고 선택한 Discord 서버에서 `/help`와 `/ping`을 선택해 실행합니다.
+저장소·작업 옵션은 추천 목록에서 선택할 수 있습니다. 봇 터미널은 계속 켜 두세요.
 `/status`를 실행할 때는 작업 ID가 필요합니다. 아직 작업이 없으면 다음 단계까지 진행한 뒤 사용하세요.
 
 ## 9. Codex CLI 로그인·실행 이미지 확인
@@ -637,7 +651,7 @@ pnpm build
 기존의 “요청을 처리하지 못했습니다. 저장소 권한…” 메시지만 나온다면 이전 봇 코드가 실행 중인 것입니다.
 저장소 루트에서 `git pull --ff-only`, `pnpm install --frozen-lockfile`, `pnpm build` 후 봇 프로세스를 재시작하세요.
 소스로 실행한다면 기존 `pnpm dev:bot` 터미널에서 Ctrl+C 후 `pnpm dev:bot`을 다시 실행합니다.
-명령 이름·옵션은 그대로이므로 이 수정으로 명령을 재등록할 필요는 없습니다.
+새 봇이 시작하면서 추가·변경된 명령을 자동 등록합니다. 별도의 수동 재등록은 필요 없습니다.
 
 ### 다른 설치·실행 문제
 

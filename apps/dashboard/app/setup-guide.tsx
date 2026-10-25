@@ -14,6 +14,11 @@ export function SetupGuide() {
         순서대로 설명합니다.
       </p>
       <p>
+        <strong>Discord에서 명령 목록이 안 보이나요?</strong> 저장소 폴더에서{' '}
+        <code>pnpm discord:setup</code>으로 토큰 입력·서버 선택을 마친 뒤 <code>pnpm dev:bot</code>
+        을 실행하세요. GitHub·Codex 연결 전에도 서버에서 <code>/help</code>부터 확인할 수 있습니다.
+      </p>
+      <p>
         각 항목을 펼쳐 발급 위치와 설정 순서를 확인하세요. 설정은 실행 서버의 <code>.env</code>에
         저장하고, <code>_FILE</code>에는 비밀값이 담긴 파일의 절대 경로를 넣습니다.
       </p>
@@ -78,32 +83,36 @@ export function SetupGuide() {
         </div>
       </details>
       <details>
-        <summary>3. Discord — 봇 토큰·애플리케이션·서버·관리자 ID</summary>
+        <summary>3. Discord — 토큰 입력 → 서버 선택 → 봇 실행</summary>
         <div className="setup-body">
           <ol>
             <li>
               <a href="https://discord.com/developers/applications">Discord Developer Portal</a>
-              에서 New Application을 만들고, General Information의 Application ID를{' '}
-              <code>DISCORD_APPLICATION_ID</code>에 입력합니다.
+              에서 앱을 만들고 Bot → Reset Token으로 봇 토큰을 준비합니다.
             </li>
             <li>
-              Bot → Reset Token에서 발급한 토큰을 비공개 파일에 저장하고{' '}
-              <code>DISCORD_BOT_TOKEN_FILE</code>에 절대 경로를 지정합니다.
+              아래 연결 도우미를 실행합니다. 토큰은 숨김 입력하고, 서버는 목록에서 선택합니다.
+              Application ID 확인·초대 링크·설정 저장·명령 등록은 자동으로 처리합니다.
             </li>
             <li>
-              OAuth2 → URL Generator에서 <code>bot</code>·<code>applications.commands</code>를
-              선택해 대상 서버로 초대합니다. 채널 보기·메시지 보내기 권한을 부여합니다.
-            </li>
-            <li>
-              Discord 사용자 설정 → 고급 → 개발자 모드를 켭니다. 서버 우클릭 → 서버 ID 복사로{' '}
-              <code>DISCORD_GUILD_ID</code>, 사용자 우클릭 → 사용자 ID 복사로{' '}
-              <code>DISCORD_ADMIN_USER_IDS</code>를 설정합니다. 여러 관리자 ID는 쉼표로 구분합니다.
+              봇 실행 후 대상 서버 채팅창에서 <code>/</code>를 누르고 <code>/help</code>,{' '}
+              <code>/ping</code>을 목록에서 선택합니다. 봇 터미널은 계속 켜 둡니다.
             </li>
           </ol>
           <pre>
-            <code>{'pnpm --filter @hub/discord-bot dev --register-commands\npnpm dev:bot'}</code>
+            <code>{'pnpm discord:setup\npnpm dev:bot'}</code>
           </pre>
-          <p>명령 등록은 대상 서버의 기존 애플리케이션 명령 목록을 갱신합니다.</p>
+          <p>
+            명령 목록이 없으면 <code>pnpm discord:check</code>로 토큰·서버·명령 등록·API 연결을
+            구분해서 확인하세요. 봇 시작 시 누락된 명령을 자동 등록하며 다른 명령은 보존합니다.
+            저장소와 최근 작업도 명령 옵션의 추천 목록에서 선택할 수 있습니다.
+          </p>
+          <p>
+            GitHub·Codex 설정 전에도 <code>/help</code>부터 사용할 수 있습니다.{' '}
+            <a href="https://github.com/Duioolllll/Discord-Auto-PR/blob/main/docs/discord-quickstart.md">
+              Discord 빠른 연결·명령이 안 보일 때 해결 방법
+            </a>
+          </p>
         </div>
       </details>
       <details>

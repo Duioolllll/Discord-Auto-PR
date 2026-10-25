@@ -1,4 +1,8 @@
-import { SlashCommandBuilder, type ChatInputCommandInteraction } from 'discord.js';
+import {
+  SlashCommandBuilder,
+  type ChatInputCommandInteraction,
+  type AutocompleteInteraction,
+} from 'discord.js';
 import {
   commandFailure,
   ControlApiError,
@@ -15,7 +19,11 @@ export const commands = [
       .setName(name)
       .setDescription(name === 'develop' ? '개발 작업을 요청합니다' : '리팩터링 작업을 요청합니다')
       .addStringOption((option) =>
-        option.setName('repository').setDescription('owner/repository').setRequired(true),
+        option
+          .setName('repository')
+          .setDescription('목록에서 선택하거나 GitHub 저장소 링크 입력')
+          .setRequired(true)
+          .setAutocomplete(true),
       )
       .addStringOption((option) =>
         option.setName('instruction').setDescription('작업 요청 내용').setRequired(true),
@@ -36,12 +44,73 @@ export const commands = [
         )[name]!,
       )
       .addStringOption((option) =>
-        option.setName('job').setDescription('작업 ID').setRequired(true),
+        option
+          .setName('job')
+          .setDescription('최근 작업 선택 또는 전체 작업 ID')
+          .setRequired(true)
+          .setAutocomplete(true),
       ),
   ),
   new SlashCommandBuilder().setName('workers').setDescription('관리자용 워커 현황'),
   new SlashCommandBuilder().setName('cost').setDescription('관리자용 비용 분류별 현황'),
+  new SlashCommandBuilder().setName('help').setDescription('처음 사용하기 · 명령어와 연결 방법'),
+  new SlashCommandBuilder()
+    .setName('ping')
+    .setDescription('Discord · API 연결과 내 저장소 권한 확인'),
 ];
+
+export async function handleAutocomplete(
+  interaction: Pick<AutocompleteInteraction, 'commandName' | 'user' | 'options' | 'respond'>,
+  client: ControlClient,
+) {
+  const field = interaction.options.getFocused(true);
+  if (
+    ![...development, ...jobCommands].includes(interaction.commandName) ||
+    !['repository', 'job'].includes(field.name)
+  )
+    return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let choices: { name: string; value: string }[] = [];
+  try {
+    const result = await Promise.race([
+      client.request(
+        field.name === 'repository' ? '/repositories' : '/jobs?limit=25',
+        interaction.user.id,
+        'GET',
+      ),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('deadline')), 2000);
+      }),
+    ]);
+    const search = String(field.value).toLowerCase();
+    if (Array.isArray(result))
+      choices = result
+        .flatMap((item) => {
+          if (field.name === 'repository')
+            return item.enabled && typeof item.fullName === 'string' && item.fullName.length <= 100
+              ? [{ name: item.fullName, value: item.fullName }]
+              : [];
+          return typeof item.id === 'string' && item.id.length <= 100
+            ? [
+                {
+                  name: `${item.status} · ${item.repository?.fullName ?? ''} · ${item.id}`.slice(
+                    0,
+                    100,
+                  ),
+                  value: item.id,
+                },
+              ]
+            : [];
+        })
+        .filter((item) => `${item.name} ${item.value}`.toLowerCase().includes(search))
+        .slice(0, 25);
+  } catch {
+    /* Autocomplete cannot show an error; /ping explains connection and role failures. */
+  } finally {
+    clearTimeout(timer);
+  }
+  await interaction.respond(choices);
+}
 export async function handleCommand(
   interaction: Pick<
     ChatInputCommandInteraction,
@@ -50,11 +119,21 @@ export async function handleCommand(
   client: ControlClient,
 ) {
   const command = interaction.commandName;
-  if (![...development, ...jobCommands, 'workers', 'cost'].includes(command)) return;
+  if (![...development, ...jobCommands, 'workers', 'cost', 'help', 'ping'].includes(command))
+    return;
   await interaction.deferReply({ ephemeral: true });
   try {
     let content: string;
-    if (development.includes(command)) {
+    if (command === 'help') {
+      content =
+        '처음이라면 /ping으로 연결과 내 저장소 권한을 확인하세요.\n/develop: 기능 개발 · /refactor: 코드 수정·리팩터링\nrepository와 job은 입력창의 추천 목록에서 선택할 수 있습니다. 저장소는 GitHub 링크를 붙여 넣어도 됩니다.\n/status: 상태 · /logs: 기록 · /cancel: 취소\n/approve: 현재 커밋 승인 · /merge: 정책 확인 후 병합\n/workers · /cost: 관리자 조회\n검토만 하는 /review는 아직 없습니다.\n연결 문제: 서버 터미널에서 pnpm discord:check\n설치 안내: https://github.com/Duioolllll/Discord-Auto-PR/blob/main/docs/discord-quickstart.md';
+    } else if (command === 'ping') {
+      await client.request('/me', interaction.user.id, 'GET');
+      const repositories = await client.request('/repositories', interaction.user.id, 'GET');
+      if (!Array.isArray(repositories)) throw new ControlApiError('CONTROL_API_INVALID_RESPONSE');
+      const count = repositories.filter((repo) => repo.enabled).length;
+      content = `Discord 연결: 정상\nControl API 인증: 정상\n내가 사용할 수 있는 활성 저장소: ${count}개\n${count ? '/develop 또는 /refactor에서 repository 추천 목록을 선택하세요.' : '저장소가 없다면 운영자가 내 Discord 사용자 ID에 저장소 역할을 등록해야 합니다.'}\n이 검사는 작업이나 PR을 만들지 않습니다. 실제 워커 준비는 별도입니다.`;
+    } else if (development.includes(command)) {
       const repository = normalizeRepository(interaction.options.getString('repository', true));
       if (!repository) throw new ControlApiError('INVALID_REPOSITORY');
       const response = await client.request('/jobs', interaction.user.id, 'POST', {

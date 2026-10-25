@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "pnpm --filter @hub/control-api dev",
     "dev:bot": "pnpm --filter @hub/discord-bot dev",
+    "discord:setup": "pnpm setup:local && node --use-env-proxy --env-file-if-exists=.env --conditions=development --import tsx scripts/discord.ts setup",
+    "discord:check": "node --use-env-proxy --env-file-if-exists=.env --conditions=development --import tsx scripts/discord.ts check",
     "dev:worker": "pnpm --filter @hub/worker-supervisor dev",
     "build": "turbo run build",
     "typecheck": "tsc --noEmit",

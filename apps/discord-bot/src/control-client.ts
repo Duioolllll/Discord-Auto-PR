@@ -1,4 +1,8 @@
 const help = {
+  CONTROL_API_NOT_CONFIGURED:
+    'API 연결 설정이 없습니다. 저장소 루트에서 pnpm setup:local을 실행한 뒤 API와 봇을 다시 시작하세요.',
+  CONTROL_API_CONFIG_INVALID:
+    'CONTROL_API_URL 설정을 확인해 주세요. 로컬 http://127.0.0.1:3001 또는 원격 HTTPS API 주소여야 합니다. 수정 후 봇을 다시 시작하세요.',
   INVALID_REPOSITORY:
     '저장소를 owner/repository 또는 https://github.com/owner/repository 형식으로 입력해 주세요.',
   REPOSITORY_NOT_INSTALLED:
