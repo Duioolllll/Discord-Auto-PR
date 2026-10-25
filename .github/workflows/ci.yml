@@ -36,6 +36,11 @@ jobs:
       - run: pnpm db:migrate
       - run: pnpm runner:build
       - run: pnpm security:check
+      - name: Runner host diagnostics
+        run: |
+          id -u
+          docker version --format '{{.Server.Version}}'
+          docker info --format '{{.KernelVersion}} {{.CgroupVersion}} {{json .SecurityOptions}}'
       - run: pnpm runner:check
       - run: docker pull node:24.19.0-bookworm-slim@sha256:a9f5f7c91a432850b2a8a7797adf5eadb6c733ceed61167806cee7ea7fbc29df
       - run: pnpm format:check && pnpm lint && pnpm typecheck

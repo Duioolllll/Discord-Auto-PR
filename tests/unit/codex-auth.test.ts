@@ -62,7 +62,7 @@ it('places exec-only options after the CLI subcommand and retains the sandbox', 
   expect(command.indexOf('--ignore-rules')).toBeGreaterThan(command.indexOf('exec'));
   expect(command).toContain('default_permissions="hub"');
   expect(command.some((argument) => argument.includes('extends=":workspace"'))).toBe(true);
-  expect(command.some((argument) => argument.includes('auth.json"="deny"'))).toBe(true);
+  expect(command.some((argument) => argument.includes('/home/runner/.codex"="deny"'))).toBe(true);
   expect(command).toContain('--ephemeral');
   expect(command).not.toContain('--dangerously-bypass-approvals-and-sandbox');
 });

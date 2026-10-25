@@ -79,6 +79,7 @@ it('masks only the explicit login from sandbox commands and keeps API keys out o
       }),
       { mode: 0o600 },
     );
+    await writeFile(join(profile, 'refresh-fixture'), 'synthetic noncredential', { mode: 0o600 });
     const result = await runSandbox(
       {
         image: codexImage(),
@@ -92,7 +93,7 @@ it('masks only the explicit login from sandbox commands and keeps API keys out o
       codexSandboxArguments([
         'node',
         '-e',
-        `const fs=require('node:fs');require('node:assert/strict').throws(()=>fs.readFileSync('/home/runner/.codex/auth.json'));require('node:assert/strict').equal(process.env.CODEX_API_KEY,undefined);fs.writeSync(1,'credentials-isolated');`,
+        `const fs=require('node:fs');require('node:assert/strict').throws(()=>fs.readFileSync('/home/runner/.codex/auth.json'));require('node:assert/strict').throws(()=>fs.readFileSync('/home/runner/.codex/refresh-fixture'));require('node:assert/strict').equal(process.env.CODEX_API_KEY,undefined);fs.writeSync(1,'credentials-isolated');`,
       ]),
       '',
       new AbortController().signal,

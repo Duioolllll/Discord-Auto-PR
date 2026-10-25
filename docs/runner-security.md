@@ -122,8 +122,11 @@ seccomp는 경로 문자열이나 호출자의 namespace 소속 자체를 검사
 - 실제 ChatGPT 모드는 **사용자가 지정하고 로그인한 전용 프로필**만 연결합니다.
   폴더는 worker 소유 `0700`, `auth.json`은 비공개 일반 파일이어야 하며 기존 symlink·소유자·권한·필수 token 필드 검사를 유지합니다.
 - 호스트의 개인 `~/.codex`나 이 작업을 수행하는 플랫폼의 로그인 파일을 자동 검색·복사하지 않습니다.
-- Codex의 `hub` 권한 프로필은 `:workspace`를 상속하고 `auth.json`, `config.toml`을 내부 명령에서 가립니다.
+- Codex의 `hub` 권한 프로필은 `:workspace`를 상속하고 **CODEX_HOME 전체**를 내부 명령에서 가립니다.
+  `auth.json`, 설정, 갱신 중 생성되는 임시 파일까지 보호합니다.
   `default_permissions="hub"`로 선택하며 실제 `exec`와 `sandbox`가 같은 설정을 사용합니다.
+- 이미지의 읽기 전용 `/usr/local/bin/apply_patch` helper가 동일한 고정 Codex 바이너리의 로컬 patch 모드를 호출합니다.
+  인증 폴더를 읽게 하지 않고도 workspace 편집을 지원하며, 검사에서 실제 파일 생성까지 확인합니다.
 - 내부 명령에는 `CODEX_API_KEY`, `OPENAI_API_KEY`를 전달하지 않도록 명시적으로 제외합니다.
   신뢰된 CLI의 API 인증은 유지합니다.
 - 프로필 파일은 OAuth 갱신을 위해 CLI에만 쓰기 가능하게 연결합니다. 별도 테스트 컨테이너에는 연결하지 않습니다.
@@ -142,7 +145,8 @@ seccomp는 경로 문자열이나 호출자의 namespace 소속 자체를 검사
 - 가짜 인증 fixture를 임시 HOME에 생성. 실제 로그인이나 모델 호출은 하지 않음.
 - 실제 Codex sandbox 안에서 user·mount·PID·IPC·network namespace가 외부 컨테이너와 모두 다른지 확인.
 - 내부 capability가 0이고 seccomp 필터가 추가되었는지 확인.
-- workspace 쓰기 성공, 외부 HOME sentinel 수정 거절, 인증 파일과 `/proc/self/root` 별칭을 통한 읽기 거절 확인.
+- workspace 쓰기 성공, 외부 HOME sentinel 수정 거절, 인증·갱신 fixture 및 `/proc/self/root` 별칭을 통한 읽기 거절 확인.
+- 인증 폴더 밖의 patch helper로 workspace 파일을 실제 생성할 수 있는지 확인.
 - API 키 fixture가 내부 환경에서 사라졌는지 확인.
 - 외부 컨테이너의 loopback 서버에 내부 명령이 접속하지 못하는지 확인.
 - 위 조건을 모두 통과한 내부 명령만 stdout에 **정확히 `sandbox-ready`**를 씀.
@@ -187,6 +191,11 @@ pnpm runner:check
 | `RUNNER_PROBE_FAILED` / `CONTAINER_CLEANUP_FAILED` | worker 재시작 전 daemon 연결과 남은 컨테이너를 운영자가 확인                           |
 
 정상 종료 처리는 daemon에 접근할 수 있을 때 보장합니다.
+`diagnostic.code`는 비밀값이 없는 단계 이름입니다. 예를 들어 `OUTER_SWAP`, `OUTER_CPU`는
+실제 cgroup 제한 확인 실패, `INNER_NAMESPACES`는 내부 namespace 분리 실패,
+`INNER_CREDENTIALS`는 인증 격리 실패, `INNER_HELPER`는 새 이미지의 patch helper 실행 실패를 뜻합니다.
+진단을 더 자세히 보려고 raw 환경변수나 로그인 파일을 출력하지 마세요.
+
 호스트 전원 장애·supervisor의 SIGKILL·daemon 통신 두절은 프로세스의 `finally`를 실행하지 못하게 할 수 있습니다.
 운영 환경에서는 라벨 `io.discord-ai-pr-hub.runner=1`의 오래된 컨테이너를 점검하는 watchdog/복구 절차가 필요합니다.
 삭제 전 실행 중인 정상 작업인지 확인해야 합니다.

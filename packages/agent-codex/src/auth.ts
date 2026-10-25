@@ -15,7 +15,7 @@ export const fileCredentialArguments = ['-c', 'cli_auth_credentials_store="file"
 // CLI credentials remain readable by the trusted CLI, but are masked from its commands.
 export const codexPermissionArguments = [
   '-c',
-  'permissions.hub={extends=":workspace",filesystem={"/home/runner/.codex/auth.json"="deny","/home/runner/.codex/config.toml"="deny"},network={enabled=false}}',
+  'permissions.hub={extends=":workspace",filesystem={"/home/runner/.codex"="deny"},network={enabled=false}}',
   '-c',
   'shell_environment_policy.exclude=["CODEX_API_KEY","OPENAI_API_KEY"]',
   '-c',

@@ -11,6 +11,7 @@ import {
   sandboxArguments,
   validateSeccompPolicy,
   codexSandboxArguments,
+  probeDiagnostic,
 } from '@hub/agent-codex';
 
 interface Rule {
@@ -152,4 +153,6 @@ it('classifies stderr without returning supplied text or credentials', () => {
   expect(classifyProbeFailure('private diagnostic must not be returned')).toBe(
     'SANDBOX_PROCESS_FAILED',
   );
+  expect(probeDiagnostic('HUB_PROBE_OUTER_SWAP')).toBe('OUTER_SWAP');
+  expect(probeDiagnostic('HUB_PROBE_secret-value')).toBe('ISOLATION_PROBE_FAILED');
 });
