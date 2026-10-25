@@ -20,11 +20,22 @@ export function setupFailure(error: unknown) {
     return 'DISCORD_FORBIDDEN: 봇 초대와 대상 서버 권한을 확인하고 pnpm discord:setup을 실행하세요.';
   if (status === 429)
     return 'DISCORD_RATE_LIMITED: Discord 요청 한도에 도달했습니다. 잠시 후 다시 실행하세요.';
+  if (error instanceof Error && error.name === 'RateLimitError')
+    return 'DISCORD_RATE_LIMITED: Discord 요청 한도에 도달했습니다. 잠시 후 다시 실행하세요.';
+  if (error instanceof Error && ['AbortError', 'TimeoutError'].includes(error.name))
+    return 'DISCORD_REQUEST_TIMEOUT: Discord 응답 시간이 초과되었습니다. HTTPS 연결·방화벽·프록시 설정을 확인하세요.';
   return 'DISCORD_CONNECTION_FAILED: Discord 연결 또는 설정 파일을 확인하세요. pnpm discord:check로 점검할 수 있습니다.';
 }
-export function discordRest(token: string) {
+export function discordRest(token: string, signal?: AbortSignal) {
   // Never print the SDK error object: it can contain the authenticated request.
-  return new REST({ timeout: 10_000, retries: 0, rejectOnRateLimit: () => true }).setToken(token);
+  const rest = new REST({ timeout: 10_000, retries: 0, rejectOnRateLimit: () => true }).setToken(
+    token,
+  );
+  if (signal) {
+    const request = rest.request.bind(rest);
+    rest.request = (options) => request({ ...options, signal });
+  }
+  return rest;
 }
 export interface DiscordTransport {
   get(route: `/${string}`, options?: { query?: URLSearchParams }): Promise<unknown>;
@@ -173,11 +184,16 @@ export async function syncCommands(
   appId: string,
   guildId: string,
   desired: Definition[],
+  signal?: AbortSignal,
 ) {
+  signal?.throwIfAborted();
   const pending = await commandState(rest, appId, guildId, desired);
   // POST upserts a named command. Preserve other commands registered by this application.
-  for (const body of pending)
+  for (const body of pending) {
+    signal?.throwIfAborted();
     await rest.post(Routes.applicationGuildCommands(appId, guildId), { body });
+  }
+  signal?.throwIfAborted();
   const remaining = await commandState(rest, appId, guildId, desired);
   if (remaining.length)
     throw new DiscordSetupError(

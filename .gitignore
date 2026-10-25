@@ -9,6 +9,9 @@ next-env.d.ts
 coverage/
 .local/
 *.log
+*.swp
+*.swo
+*.swn
 
 *.tsbuildinfo
 

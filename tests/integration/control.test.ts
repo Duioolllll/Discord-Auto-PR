@@ -12,7 +12,11 @@ import { WorkerClient } from '../../apps/worker-supervisor/src/client.js';
 import { FakeGitHub } from '../fixtures/github.js';
 import { supervise } from '../../apps/worker-supervisor/src/supervisor.js';
 import { synchronizePullRequests } from '../../apps/orchestrator/src/reconcile.js';
-import { handleCommand, handleAutocomplete } from '../../apps/discord-bot/src/commands.js';
+import {
+  commands,
+  handleCommand,
+  handleAutocomplete,
+} from '../../apps/discord-bot/src/commands.js';
 import { createControlClient } from '../../apps/discord-bot/src/control-client.js';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -105,6 +109,104 @@ afterAll(async () => {
 });
 
 describe('control API with real PostgreSQL and Redis', () => {
+  it('routes all eleven Discord commands through the real API with identity, role, approval and SHA policy checks', async () => {
+    const reviewer = '987654321098765432';
+    const server = buildApp({
+      db,
+      config: { ...config, DISCORD_ADMIN_USER_IDS: reviewer },
+      pingRedis: () => queue.connection.ping(),
+      github,
+    });
+    const base = await server.listen({ host: '127.0.0.1', port: 0 });
+    const tested = new Set<string>();
+    try {
+      await db.repository.update({
+        where: { fullName: 'test/installed' },
+        data: { requiredChecks: ['ci'] },
+      });
+      const api = createControlClient(base, config.BOT_API_TOKEN);
+      const invoke = async (name: string, actorId = userId, job?: string) => {
+        const interactionId = randomUUID();
+        const editReply = vi.fn<
+          (reply: { content: string; allowedMentions: { parse: string[] } }) => Promise<void>
+        >(async () => undefined);
+        await handleCommand(
+          {
+            commandName: name,
+            id: interactionId,
+            user: { id: actorId },
+            options: {
+              getString: (key: string) =>
+                key === 'job'
+                  ? job
+                  : key === 'repository'
+                    ? 'https://github.com/test/installed'
+                    : 'Isolated Discord flow fixture',
+            },
+            deferReply: vi.fn(async () => undefined),
+            editReply,
+          } as unknown as Parameters<typeof handleCommand>[0],
+          api,
+        );
+        expect(editReply).toHaveBeenCalledOnce();
+        const reply = editReply.mock.calls[0]![0];
+        expect(reply.allowedMentions).toEqual({ parse: [] });
+        tested.add(name);
+        return { reply: reply.content, externalRequestId: `discord:${interactionId}` };
+      };
+      expect((await invoke('help')).reply).toContain('/ping');
+      expect((await invoke('ping')).reply).toContain('활성 저장소: 1개');
+      const developed = await invoke('develop');
+      const refactored = await invoke('refactor');
+      const development = await db.job.findUniqueOrThrow({
+        where: { externalRequestId: developed.externalRequestId },
+      });
+      const refactor = await db.job.findUniqueOrThrow({
+        where: { externalRequestId: refactored.externalRequestId },
+      });
+      expect(developed.reply).toContain(development.id);
+      expect(refactored.reply).toContain(refactor.id);
+      expect(development.kind).toBe('develop');
+      expect(refactor.kind).toBe('refactor');
+      expect((await invoke('status', userId, development.id)).reply).toContain('QUEUED');
+      expect((await invoke('logs', userId, development.id)).reply).toContain('QUEUED');
+      expect((await invoke('cancel', userId, refactor.id)).reply).toContain('CANCELLED');
+      expect((await invoke('workers')).reply).toContain('ADMIN_REQUIRED');
+      expect((await invoke('cost')).reply).toContain('PROJECT_ADMIN_REQUIRED');
+      await register();
+      expect((await invoke('workers', reviewer)).reply).toContain('test: codex');
+      expect((await invoke('cost', reviewer)).reply).toContain('기록된 비용');
+      await db.job.update({ where: { id: development.id }, data: { status: 'PR_OPEN' } });
+      await db.pRLink.create({
+        data: {
+          jobId: development.id,
+          number: 1,
+          branch: `hub/job-${development.id}`,
+          url: 'https://github.com/test/installed/pull/1',
+          headSha: github.headSha,
+          baseSha: 'a'.repeat(40),
+        },
+      });
+      expect((await invoke('approve', userId, development.id)).reply).toContain(
+        'REVIEWER_ROLE_REQUIRED',
+      );
+      await api.request('/identity/github', reviewer, 'POST', { oauthToken: 'test-oauth-proof' });
+      expect((await invoke('approve', reviewer, development.id)).reply).toContain(github.headSha);
+      github.checkConclusion = 'failure';
+      expect((await invoke('merge', reviewer, development.id)).reply).toContain(
+        'MERGE_POLICY_REJECTED',
+      );
+      expect(github.merges).toBe(0);
+      github.checkConclusion = 'success';
+      expect((await invoke('merge', reviewer, development.id)).reply).toContain('d'.repeat(40));
+      expect(github.merges).toBe(1); // FakeGitHub only; no external requests.
+      expect(github.writes).toBe(0);
+      expect([...tested].sort()).toEqual(commands.map((command) => command.name).sort());
+    } finally {
+      await server.close();
+    }
+  });
+
   it('keeps Discord connection checks and autocomplete within the actual user repository roles', async () => {
     await db.repository.create({ data: { fullName: 'private/other', installationId: '43' } });
     const server = buildApp({ db, config, pingRedis: () => queue.connection.ping(), github });

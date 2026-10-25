@@ -21,8 +21,9 @@ import { saveDiscordConfig } from './discord-config.js';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const definitions = commands.map((command) => command.toJSON());
 const label = (value: string) => value.replace(/[\p{C}]/gu, '').slice(0, 100);
+let stage = '실행 준비';
 
-async function checkApi(userId?: string) {
+async function checkApi(userId?: string, signal?: AbortSignal) {
   if (!process.env.CONTROL_API_URL || !process.env.BOT_API_TOKEN) {
     console.log('[실패] API 설정 없음 → pnpm setup:local 후 API·봇 재시작');
     return false;
@@ -30,7 +31,14 @@ async function checkApi(userId?: string) {
   try {
     let api;
     try {
-      api = createControlClient(process.env.CONTROL_API_URL, process.env.BOT_API_TOKEN);
+      const fetcher: typeof fetch = signal
+        ? (input, options) =>
+            fetch(input, {
+              ...options,
+              signal: AbortSignal.any([signal, ...(options?.signal ? [options.signal] : [])]),
+            })
+        : fetch;
+      api = createControlClient(process.env.CONTROL_API_URL, process.env.BOT_API_TOKEN, fetcher);
     } catch {
       console.log(
         '[실패] CONTROL_API_URL 확인: 로컬 http://127.0.0.1:3001 또는 원격 HTTPS API 주소여야 합니다.',
@@ -57,6 +65,7 @@ async function checkApi(userId?: string) {
     } else console.log('[미확인] 개인 역할·내부 API 토큰 인증 → Discord /ping으로 확인하세요.');
     return true;
   } catch (error) {
+    signal?.throwIfAborted();
     console.log(`[실패] ${commandFailure(error, 'ping')}`);
     console.log('API 실행: 별도 터미널에서 pnpm dev');
     return false;
@@ -135,11 +144,21 @@ async function setup() {
       }
     }
   };
+  const askId = async (question: string, defaultValue: string) => {
+    for (;;) {
+      const value = (await ask(question)) || defaultValue;
+      if (!value || discordId.test(value)) return value;
+      console.log(
+        'Discord 사용자 ID는 17~20자리 숫자입니다. 개발자 모드에서 ID를 복사하거나 Enter로 건너뛰세요.',
+      );
+    }
+  };
   try {
     console.log('Discord 빠른 연결 — 봇 토큰 → 서버 선택 → 명령 등록');
     console.log(
       'Developer Portal: https://discord.com/developers/applications → Bot → Reset Token',
     );
+    stage = '봇 토큰 입력';
     let token: string | undefined;
     try {
       token = await botToken(process.env);
@@ -151,14 +170,17 @@ async function setup() {
     token ??= await ask('봇 토큰 붙여넣기 (화면에 표시되지 않음): ', true);
     token = await botToken({ DISCORD_BOT_TOKEN: token });
     if (!token) throw new DiscordSetupError('DISCORD_TOKEN_REQUIRED', '봇 토큰이 비어 있습니다.');
-    const rest = discordRest(token);
+    const rest = discordRest(token, abort.signal);
+    stage = 'Discord 봇 인증';
     // Setup intentionally repairs a stale Application ID using the verified bot token.
     const appId = await applicationId(rest);
+    abort.signal.throwIfAborted();
     console.log(`[정상] 봇 인증 · Application ID ${appId} 자동 확인`);
     console.log(
       `봇을 초대할 서버를 선택하세요. 다음 링크를 브라우저에서 열어 초대할 수도 있습니다.\n${inviteUrl(appId)}`,
     );
     let guildId = '';
+    stage = '서버 선택·접근 확인';
     while (!guildId) {
       const guilds = await botGuilds(rest);
       guilds
@@ -179,30 +201,53 @@ async function setup() {
         console.log('위 링크에서 초대를 완료한 뒤 다시 선택하세요.');
         continue;
       }
-      await requireGuild(rest, selected, appId);
+      try {
+        await requireGuild(rest, selected, appId);
+      } catch (error) {
+        if (error instanceof DiscordSetupError && error.code === 'DISCORD_GUILD_UNAVAILABLE') {
+          console.log(setupFailure(error));
+          continue;
+        }
+        throw error;
+      }
       guildId = selected;
     }
-    const defaultUser =
+    const configuredUser =
       process.env.DISCORD_CHECK_USER_ID || process.env.DISCORD_ADMIN_USER_IDS?.split(',')[0] || '';
-    const userId =
-      (await ask(
-        `권한을 확인할 본인 Discord 사용자 ID (선택, Enter: ${defaultUser || '건너뛰기'}): `,
-      )) || defaultUser;
-    if (userId && !discordId.test(userId))
-      throw new DiscordSetupError(
-        'DISCORD_USER_ID_INVALID',
-        '사용자 설정 → 고급 → 개발자 모드에서 본인의 사용자 ID를 복사하세요.',
-      );
+    const defaultUser = discordId.test(configuredUser) ? configuredUser : '';
+    const userId = await askId(
+      `권한을 확인할 본인 Discord 사용자 ID (선택, Enter: ${defaultUser || '건너뛰기'}): `,
+      defaultUser,
+    );
+    if (abort.signal.aborted) throw new Error();
+    stage = '설정 파일 저장';
     await saveDiscordConfig(root, token, appId, guildId, userId);
+    abort.signal.throwIfAborted();
     console.log(
       '[정상] 설정 저장 (.env 0600 · 봇 토큰 파일 0600). 기존 API·GitHub·Codex 설정은 보존했습니다.',
     );
-    const count = await syncCommands(rest, appId, guildId, definitions);
+    stage = '서버 명령 등록·재조회';
+    const count = await syncCommands(rest, appId, guildId, definitions, abort.signal);
     console.log(`[정상] 서버 명령 ${definitions.length}개 등록 확인 (${count}개 갱신)`);
-    await checkApi(userId);
+    stage = 'Control API 연결 점검';
+    console.log('Control API 연결을 확인합니다…');
+    const apiReady = await checkApi(userId, abort.signal);
+    abort.signal.throwIfAborted();
+    console.log(
+      apiReady
+        ? 'Discord 명령 등록과 API 연결 확인을 마쳤습니다.'
+        : 'Discord 명령 등록을 마쳤습니다. API는 준비 대기 중입니다. 별도 터미널에서 pnpm dev 실행 후 /ping으로 확인하세요.',
+    );
     console.log(
       '다음: pnpm dev:bot → 「봇 온라인」 확인 → 선택한 서버에서 /help → /ping\n명령은 /를 누른 뒤 목록에서 선택하세요. 예시의 repository: 부분을 일반 메시지로 붙여 넣지 않습니다.\nAPI나 워커가 아직 없어도 명령 등록과 /help는 사용할 수 있습니다.',
     );
+  } catch (error) {
+    if (abort.signal.aborted)
+      throw new DiscordSetupError(
+        'DISCORD_SETUP_CANCELLED',
+        '사용자가 설정을 취소했습니다. 완료된 설정은 보존됩니다.',
+      );
+    throw error;
   } finally {
     rl.close();
   }
@@ -216,6 +261,8 @@ try {
       'pnpm discord:setup 또는 pnpm discord:check를 실행하세요.',
     );
 } catch (error) {
+  console.error(`중단 단계: ${stage}`);
   console.error(setupFailure(error));
-  process.exitCode = 1;
+  process.exitCode =
+    error instanceof DiscordSetupError && error.code === 'DISCORD_SETUP_CANCELLED' ? 130 : 1;
 }

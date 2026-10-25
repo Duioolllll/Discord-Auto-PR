@@ -76,7 +76,7 @@ export async function saveDiscordConfig(
     DISCORD_BOT_TOKEN_FILE: secretFile,
     DISCORD_APPLICATION_ID: appId,
     DISCORD_GUILD_ID: guildId,
-    ...(checkUserId ? { DISCORD_CHECK_USER_ID: checkUserId } : {}),
+    ...(checkUserId !== undefined ? { DISCORD_CHECK_USER_ID: checkUserId } : {}),
   };
   const managed = new Set(['DISCORD_BOT_TOKEN', ...Object.keys(values)]);
   const preserved = original
