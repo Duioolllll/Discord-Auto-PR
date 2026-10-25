@@ -73,37 +73,47 @@ sudo apt-get install -y git curl ca-certificates xz-utils nano
 
 ### Node.js 24 설치
 
-필요한 버전은 **Node.js 24**이며 이 저장소는 **24.19.0**으로 검증했습니다.
+기존 Node가 있다면 저장소를 최신 코드로 받은 뒤 아래 도우미로 Node LTS와 pnpm을 준비할 수 있습니다.
+
+```bash
+node --use-env-proxy scripts/setup-node.mjs
+source .local/activate-toolchain.sh
+```
+
+이미 설치한 사용자의 전체 업데이트 순서는 [버전 업데이트 안내](toolchain.md)를 확인하세요.
+아래는 Node가 아예 없을 때의 첫 설치 방법입니다.
+
+필요한 버전은 **Node.js 24**이며 이 저장소는 **24.22.1**으로 검증했습니다.
 이미 해당 버전이 설치되어 있으면 다운로드 과정은 건너뛰세요.
 아래는 Linux x64용 공식 배포 파일을 사용자 폴더에 설치하는 방법입니다.
 
 ```bash
 mkdir -p "$HOME/.cache/hub-node-install"
 cd "$HOME/.cache/hub-node-install"
-curl -fSLO https://nodejs.org/dist/v24.19.0/node-v24.19.0-linux-x64.tar.xz
-curl -fSLO https://nodejs.org/dist/v24.19.0/SHASUMS256.txt
+curl -fSLO https://nodejs.org/dist/v24.22.1/node-v24.22.1-linux-x64.tar.xz
+curl -fSLO https://nodejs.org/dist/v24.22.1/SHASUMS256.txt
 sha256sum --check --ignore-missing SHASUMS256.txt
 ```
 
-`node-v24.19.0-linux-x64.tar.xz: OK`가 나와야 합니다. 확인에 실패하면 설치를 이어가지 마세요.
+`node-v24.22.1-linux-x64.tar.xz: OK`가 나와야 합니다. 확인에 실패하면 설치를 이어가지 마세요.
 
 ```bash
 mkdir -p "$HOME/.local"
-tar -xJf node-v24.19.0-linux-x64.tar.xz -C "$HOME/.local"
-export PATH="$HOME/.local/node-v24.19.0-linux-x64/bin:$PATH"
+tar -xJf node-v24.22.1-linux-x64.tar.xz -C "$HOME/.local"
+export PATH="$HOME/.local/node-v24.22.1-linux-x64/bin:$PATH"
 ```
 
 새 터미널에서도 같은 Node를 사용하려면 다음 명령을 **한 번** 실행합니다.
 
 ```bash
-printf '%s\n' 'export PATH="$HOME/.local/node-v24.19.0-linux-x64/bin:$PATH"' >> "$HOME/.bashrc"
+printf '%s\n' 'export PATH="$HOME/.local/node-v24.22.1-linux-x64/bin:$PATH"' >> "$HOME/.bashrc"
 ```
 
 ### pnpm 활성화·설치 확인
 
 ```bash
 corepack enable
-corepack prepare pnpm@10.20.0 --activate
+corepack prepare pnpm@12.15.0 --activate
 node --version
 pnpm --version
 git --version
@@ -113,8 +123,8 @@ docker compose version
 
 확인할 결과:
 
-- `node --version`: `v24.19.0`.
-- `pnpm --version`: `10.20.0`.
+- `node --version`: `v24.22.1`.
+- `pnpm --version`: `12.15.0`.
 - `docker version`: Client와 Server 정보가 모두 출력됨.
 - `docker compose version`: Compose v2가 출력됨.
 
@@ -409,12 +419,12 @@ pnpm dev:bot
 ### ChatGPT 계정 로그인
 
 ```bash
-npm install --global @openai/codex@0.163.0
+npm install --global @openai/codex@0.164.0
 codex --version
 pnpm codex:login
 ```
 
-버전은 `codex-cli 0.163.0`이어야 합니다.
+버전은 `codex-cli 0.164.0`이어야 합니다.
 CLI가 안내하는 페이지를 본인 브라우저에서 열어 ChatGPT 계정으로 로그인하고, 로그인 명령이 완료되기를 기다립니다.
 일반 브라우저 로그인 방식이 필요하면 `pnpm codex:login --browser`를 사용합니다.
 상태를 확인합니다.
@@ -440,7 +450,7 @@ HUB_CODEX_AUTH_MODE=chatgpt
 
 ```bash
 pnpm runner:build
-docker image inspect hub-codex:0.163.0 --format '{{.Id}}'
+docker image inspect hub-codex:0.164.0 --format '{{.Id}}'
 pnpm runner:check
 ```
 
@@ -509,7 +519,7 @@ WORKER_TEST_COMMAND='["pnpm","test"]'
 실제로 검증하지 않는 성공 명령을 넣지 마세요.
 현재 허용하는 첫 실행 파일은 `node`, `npm`, `pnpm`, `python3`, `pytest`, `cargo`, `go`입니다.
 
-**기본 `hub-codex:0.163.0` 이미지에는 Node와 Codex만 있으며 프로젝트의 도구·의존성을 자동 설치하지 않습니다.**
+**기본 `hub-codex:0.164.0` 이미지에는 Node와 Codex만 있으며 프로젝트의 도구·의존성을 자동 설치하지 않습니다.**
 검증 컨테이너는 네트워크 없이 실행되므로 검증 중 `npm install` 등으로 내려받을 수 없습니다.
 이 모노레포처럼 pnpm·프로젝트 패키지가 필요한 저장소는 그 도구와 의존성을 갖춘 맞춤 이미지/실행 준비가 필요합니다.
 그 경우 `HUB_CODEX_IMAGE`에도 맞춤 이미지의 고정 ID를 지정합니다.

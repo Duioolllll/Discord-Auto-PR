@@ -1,10 +1,11 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import toolchain from '../../../toolchain.json' with { type: 'json' };
 import { codexSandboxArguments } from './auth.js';
 import { codexSeccompPath, RunnerFailure, runSandbox, type ProbeReason } from './container.js';
 
-export const codexVersion = '0.163.0';
+export const codexVersion = toolchain.codex;
 export interface ProbeResult {
   ready: boolean;
   reason: ProbeReason | 'OK';

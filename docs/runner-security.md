@@ -17,12 +17,12 @@ Docker Desktop을 사용한다면 WSL 클라이언트와 Docker daemon의 실제
 
 Docker의 기본 seccomp는 `CAP_SYS_ADMIN`이 없을 때 namespace 플래그가 있는 `clone`을 제한합니다.
 `unshare`, `mount`, `pivot_root`, `umount2` 등도 기본적으로 제한됩니다.
-Codex 0.163.0의 내장 Bubblewrap은 새 user namespace를 만든 뒤 그 namespace 안에서
+Codex 0.164.0의 내장 Bubblewrap은 새 user namespace를 만든 뒤 그 namespace 안에서
 mount·PID·IPC·network 분리와 파일시스템 구성을 수행하므로 이 호출들이 필요합니다.
 Bubblewrap의 일반적인 namespace 오류 문구만 보고 호스트 커널 전체가 user namespace를 지원하지 않는다고 단정하면 안 됩니다.
 
 추가로 기존 검사에는 **CLI 문법 오류**가 있었습니다.
-0.163.0의 명령은 `codex sandbox -- 명령`입니다.
+0.164.0의 명령은 `codex sandbox -- 명령`입니다.
 `codex sandbox linux -- 명령`으로 실행하면 `linux`를 실행 파일 이름으로 해석합니다.
 seccomp에 먼저 막혀 있던 동안에는 이 두 번째 오류가 드러나지 않았습니다.
 
@@ -56,9 +56,9 @@ daemon 버전의 변경에 따라 정책을 자동으로 넓히지 않도록 고
 bind-remount 규칙은 `MS_BIND | MS_REMOUNT`를 요구하고 알려진 파일시스템 속성만 추가로 허용합니다.
 `MS_MOVE` 등 임의의 다른 mount 연산은 추가 허용하지 않습니다.
 이 목록은 고정 Codex 아티팩트의 내장 Bubblewrap 소스와, 인증 정보를 사용하지 않은 실제 syscall trace로 확인했습니다.
-참고 소스: [내장 Bubblewrap](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/vendor/bubblewrap/bubblewrap.c),
-[Codex bwrap 구성](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/linux-sandbox/src/bwrap.rs),
-[sandbox CLI 구현](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/cli/src/debug_sandbox.rs).
+참고 소스: [내장 Bubblewrap](https://github.com/openai/codex/blob/rust-v0.164.0/codex-rs/vendor/bubblewrap/bubblewrap.c),
+[Codex bwrap 구성](https://github.com/openai/codex/blob/rust-v0.164.0/codex-rs/linux-sandbox/src/bwrap.rs),
+[sandbox CLI 구현](https://github.com/openai/codex/blob/rust-v0.164.0/codex-rs/cli/src/debug_sandbox.rs).
 
 **추가 허용하지 않은 항목:**
 
@@ -178,8 +178,8 @@ seccomp는 경로 문자열이나 호출자의 namespace 소속 자체를 검사
 
 ## 6. 검사에서 실제로 확인하는 것
 
-`pnpm runner:check`는 `.env`의 `HUB_CODEX_IMAGE`를 읽고, 비어 있으면 로컬 `hub-codex:0.163.0`의 ID를 찾습니다.
-버전 출력은 정확히 `codex-cli 0.163.0`이어야 합니다.
+`pnpm runner:check`는 `.env`의 `HUB_CODEX_IMAGE`를 읽고, 비어 있으면 로컬 `hub-codex:0.164.0`의 ID를 찾습니다.
+버전 출력은 정확히 `codex-cli 0.164.0`이어야 합니다.
 그다음 인증 없는 컨테이너 안에서 다음 검사를 수행합니다.
 
 - 외부 UID가 비root이고 CapEff·CapPrm·CapBnd가 모두 0이며 NNP와 seccomp가 활성화됨.
@@ -203,10 +203,12 @@ Ubuntu에서는 테스트용으로 `sudo apt-get install build-essential`을 사
 ## 7. 지원 환경과 실패 진단
 
 실제 확인 환경: **Linux kernel 6.18.55, Docker Engine 28.4.0, cgroup v2, Linux amd64, 일반 사용자 UID 1000**.
-이 환경에서 실제 Docker 내부 Codex 0.163.0의 격리 검사가 통과했습니다.
-추가로 **GitHub Ubuntu / kernel 6.17.0-1022-azure / Docker 28.0.4 / cgroup v2 / UID 1001**에서
+이 환경에서 실제 Docker 내부 Codex 0.164.0의 격리 검사가 통과했습니다.
+이전 Codex 0.163.0은 **GitHub Ubuntu / kernel 6.17.0-1022-azure / Docker 28.0.4 / cgroup v2 / UID 1001**에서
 전용 AppArmor를 외부·내부 모두 enforce 모드로 유지한 검사와 전체 CI가 통과했습니다.
-검증 기록: [GitHub Actions](https://github.com/Duioolllll/Discord-Auto-PR/actions/runs/40154578765).
+이전 검증 기록: [GitHub Actions](https://github.com/Duioolllll/Discord-Auto-PR/actions/runs/40154578765).
+Node 24.22.1 LTS·Codex 0.164.0 업데이트도 같은 정책과 [CI 절차](https://github.com/Duioolllll/Discord-Auto-PR/actions/workflows/ci.yml)로 재검증합니다.
+버전 기준과 업그레이드 순서는 [도구 버전 안내](toolchain.md)를 참고하세요.
 사용자가 보고한 Ubuntu 26.10 / WSL2 / kernel 6.18.33.2 / Docker 29.1.3 머신에는 이 세션에서 직접 접속하지 않았습니다.
 그 머신의 최종 지원 여부는 아래 업데이트 후 동일 검사를 실행해 확인해야 합니다.
 
@@ -228,7 +230,7 @@ pnpm runner:check
 
 | reason / 진단                                      | 조치                                                                                   |
 | -------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `CODEX_VERSION_MISMATCH`                           | 고정된 0.163.0 이미지 재빌드 후 새 image ID 지정                                       |
+| `CODEX_VERSION_MISMATCH`                           | 고정된 0.164.0 이미지 재빌드 후 새 image ID 지정                                       |
 | `CODEX_HOME_UNAVAILABLE`                           | 새 entrypoint가 있는 이미지인지, 임시 HOME과 명시한 프로필의 소유자·권한이 맞는지 확인 |
 | `NAMESPACE_SANDBOX_UNAVAILABLE`                    | 정책 적용, kernel user namespace 제한, LSM 거절·namespace 한도 확인                    |
 | `SECCOMP_POLICY_INVALID`                           | 저장소의 정책·생성기·런타임 버전이 일치하는지 확인. 임의 정책으로 우회하지 않음        |
@@ -270,11 +272,11 @@ pnpm install --frozen-lockfile
 pnpm --filter @hub/agent-codex build
 pnpm build
 pnpm runner:build
-docker image inspect hub-codex:0.163.0 --format '{{.Id}}'
+docker image inspect hub-codex:0.164.0 --format '{{.Id}}'
 ```
 
 **마지막 명령의 새 `sha256:...` 전체 값을 `.env`의 `HUB_CODEX_IMAGE`에 반영하세요.**
-같은 `hub-codex:0.163.0` 태그여도 entrypoint 수정으로 image ID가 바뀝니다.
+같은 `hub-codex:0.164.0` 태그여도 entrypoint 수정으로 image ID가 바뀝니다.
 기존 `.env` 전체를 예제 파일로 덮어쓰거나 로그인 프로필을 지우지 마세요.
 AppArmor가 활성화된 호스트는 앞의 전용 프로필 설치와 `.env`의 `HUB_CODEX_APPARMOR_PROFILE` 설정도 완료하세요.
 

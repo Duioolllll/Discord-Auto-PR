@@ -1,3 +1,5 @@
+import toolchain from '../../../toolchain.json';
+
 export function SetupGuide() {
   return (
     <section id="setup" className="setup-guide" aria-labelledby="setup-heading">
@@ -14,6 +16,13 @@ export function SetupGuide() {
         순서대로 설명합니다.
       </p>
       <p>
+        기준 버전: Node {toolchain.node} LTS · pnpm {toolchain.pnpm} · Codex {toolchain.codex} 안정
+        버전.{' '}
+        <a href="https://github.com/Duioolllll/Discord-Auto-PR/blob/main/docs/toolchain.md">
+          기존 설치 버전 맞추기
+        </a>
+      </p>
+      <p>
         <strong>Discord에서 명령 목록이 안 보이나요?</strong> 저장소 폴더에서{' '}
         <code>pnpm discord:setup</code>으로 토큰 입력·서버 선택을 마친 뒤 <code>pnpm dev:bot</code>
         을 실행하세요. GitHub·Codex 연결 전에도 서버에서 <code>/help</code>부터 확인할 수 있습니다.
@@ -26,12 +35,12 @@ export function SetupGuide() {
         <summary>1. Codex CLI — ChatGPT 계정으로 로그인</summary>
         <div className="setup-body">
           <p>
-            개인 Linux/WSL 워커에 Codex CLI 0.163.0을 설치하고 저장소 폴더에서 실행하세요. 기본값은{' '}
-            <code>HUB_CODEX_AUTH_MODE=chatgpt</code>이며 OpenAI API 키가 필요 없습니다.
+            개인 Linux/WSL 워커에 Codex CLI {toolchain.codex}를 설치하고 저장소 폴더에서 실행하세요.
+            기본값은 <code>HUB_CODEX_AUTH_MODE=chatgpt</code>이며 OpenAI API 키가 필요 없습니다.
           </p>
           <pre>
             <code>
-              {'npm install --global @openai/codex@0.163.0\npnpm codex:login\npnpm codex:status'}
+              {`npm install --global @openai/codex@${toolchain.codex}\npnpm codex:login\npnpm codex:status`}
             </code>
           </pre>
           <p>
@@ -123,7 +132,7 @@ export function SetupGuide() {
             다음 명령으로 얻은 <code>sha256:…</code> 값을 <code>HUB_CODEX_IMAGE</code>에 넣습니다.
           </p>
           <pre>
-            <code>{"docker image inspect hub-codex:0.163.0 --format '{{.Id}}'"}</code>
+            <code>{`docker image inspect hub-codex:${toolchain.codex} --format '{{.Id}}'`}</code>
           </pre>
           <p>
             <code>HUB_RUNNER_NETWORK</code>에는 운영자가 Codex 접속 목적지를 제한해 준비한{' '}

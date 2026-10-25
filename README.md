@@ -9,6 +9,9 @@ Discord 요청을 격리 워커에 배정하고, 변경·PR·사람 승인·병�
 토큰 입력·서버 선택·초대·명령 등록을 안내합니다. GitHub·Codex 준비 전에도 `/help`부터 확인할 수 있습니다.
 [Discord 빠른 연결·문제 해결](docs/discord-quickstart.md)
 
+기준 버전은 **Node 24.22.1 LTS · pnpm 12.15.0 · Codex 0.164.0 안정 버전**입니다.
+Codex와 pnpm은 별도 LTS 채널이 없습니다. 기존 설치를 맞추는 방법은 [도구 버전·업데이트 안내](docs/toolchain.md)를 확인하세요.
+
 ## 처음 설치한다면 여기부터
 
 **[설치부터 실행까지 따라 하는 가이드](docs/getting-started.md)**를 먼저 읽어 주세요.
@@ -17,7 +20,7 @@ DB·대시보드·GitHub App·Discord 봇·Codex 워커 설정까지 순서대�
 각 단계의 성공 확인 방법, 종료·재실행 방법, 오류 해결표도 포함합니다.
 
 처음에는 **대시보드 실행까지** 진행하면 됩니다. 이 단계에는 외부 서비스 키가 필요 없습니다.
-Node.js 24, pnpm 10.20.0, Git, Docker + Compose v2를 준비한 Ubuntu/WSL 터미널에서:
+Node.js 24, pnpm 12.15.0, Git, Docker + Compose v2를 준비한 Ubuntu/WSL 터미널에서:
 
 ```bash
 git clone https://github.com/Duioolllll/Discord-Auto-PR.git
@@ -65,7 +68,7 @@ GitHub App·Discord 봇은 각 서비스에서 생성합니다. 이미지·네�
 | `DISCORD_GUILD_ID`                  | 연결 도우미의 서버 목록에서 선택. 수동 설정은 개발자 모드 활성화 → 대상 서버 우클릭 → **서버 ID 복사**                                             |
 | `DISCORD_ADMIN_USER_IDS`            | 관리자 사용자 우클릭 → **사용자 ID 복사**. 여러 명은 공백 없이 쉼표로 구분                                                                         |
 | `HUB_CODEX_API_KEY_FILE`            | **ChatGPT 로그인에서는 비워 둠.** 선택형 `api-key` 모드에서만 [OpenAI API keys](https://platform.openai.com/api-keys)에서 생성한 키 파일 경로 지정 |
-| `HUB_CODEX_IMAGE`                   | `pnpm runner:build` 후 `docker image inspect hub-codex:0.163.0 --format '{{.Id}}'`로 얻은 `sha256:…` 이미지 ID                                     |
+| `HUB_CODEX_IMAGE`                   | `pnpm runner:build` 후 `docker image inspect hub-codex:0.164.0 --format '{{.Id}}'`로 얻은 `sha256:…` 이미지 ID                                     |
 | `HUB_RUNNER_NETWORK`                | 운영자가 Codex 접속 목적지 제한을 구성한 `hub-egress-*` Docker 네트워크 이름                                                                       |
 | `WORKER_TEST_COMMAND`               | 대상 저장소의 테스트 명령을 JSON 배열로 입력. 예: `["pnpm","test"]`                                                                                |
 
@@ -148,10 +151,10 @@ GitHub·Codex 설정 없이 `/help`부터 확인할 수 있습니다. [쉬운 Di
 
 ### 4. Codex CLI 로그인·워커 설정
 
-개인 Linux/WSL 워커에 **Codex CLI 0.163.0**을 설치하고 저장소 폴더에서 실행합니다.
+개인 Linux/WSL 워커에 **Codex CLI 0.164.0**을 설치하고 저장소 폴더에서 실행합니다.
 
 ```sh
-npm install --global @openai/codex@0.163.0
+npm install --global @openai/codex@0.164.0
 pnpm codex:login
 pnpm codex:status
 ```
@@ -173,7 +176,7 @@ API 키 인증을 선택할 때만 `HUB_CODEX_AUTH_MODE=api-key`와 `HUB_CODEX_A
 
 ## 개발 환경
 
-Node.js 24 (`.node-version`), pnpm 10.20.0/Corepack, Docker Engine + Compose v2가 필요합니다.
+Node.js 24 (`.node-version`), pnpm 12.15.0/Corepack, Docker Engine + Compose v2가 필요합니다.
 클라우드 작업은 이미 격리되므로 기존 체크아웃을 사용하고 별도 Git worktree를 만들지 않습니다.
 
 ```sh
@@ -223,7 +226,7 @@ DB 테스트와 browser 테스트는 **순서대로** 실행하세요. 둘 다 �
 통합 테스트가 사용하는 Node Docker 이미지는 다음과 같이 준비합니다.
 
 ```sh
-docker pull node:24.19.0-bookworm-slim@sha256:a9f5f7c91a432850b2a8a7797adf5eadb6c733ceed61167806cee7ea7fbc29df
+docker pull node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205
 ```
 
 통합 테스트는 명령/웹훅 중복, 권한, 예산 경쟁, fencing/취소/만료, PR 복구,
@@ -282,7 +285,7 @@ pnpm dev:bot
 ## 실제 Codex 워커
 
 기본 인증은 **Codex CLI의 ChatGPT 계정 로그인**입니다. OpenAI API key는 필수가 아닙니다.
-개인 Linux/WSL 워커에 Codex CLI 0.163.0을 설치한 뒤 다음을 실행합니다.
+개인 Linux/WSL 워커에 Codex CLI 0.164.0을 설치한 뒤 다음을 실행합니다.
 
 ```sh
 pnpm codex:login
@@ -307,7 +310,7 @@ pnpm runner:build
 pnpm runner:check
 ```
 
-빌드는 공식 `@openai/codex@0.163.0-linux-x64` npm 아티팩트의 고정 SHA-512를 확인하고 네트워크 없이 이미지를 조립합니다.
+빌드는 공식 `@openai/codex@0.164.0-linux-x64` npm 아티팩트의 고정 SHA-512를 확인하고 네트워크 없이 이미지를 조립합니다.
 `runner:check`는 이미지 ID·버전·seccomp 적용과 실제 내부 namespace/권한/쓰기/네트워크/인증 격리를 검사합니다.
 검증 환경에서 `{"ready":true,"reason":"OK"}`를 확인했습니다. 자신의 호스트에서도 이 결과를 확인한 뒤 실행하세요.
 정책이 없거나 적용되지 않으면 중단하며, sandbox를 끄는 방식으로 전환하지 않습니다.

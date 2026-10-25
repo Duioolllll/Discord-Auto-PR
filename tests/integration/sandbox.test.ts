@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
+import toolchain from '../../toolchain.json' with { type: 'json' };
 import {
   runSandbox,
   codexExecArguments,
@@ -191,13 +192,7 @@ it('enforces real Docker isolation while permitting workspace output', async () 
   try {
     const image = execFileSync(
       'docker',
-      [
-        'image',
-        'inspect',
-        'node:24.19.0-bookworm-slim@sha256:a9f5f7c91a432850b2a8a7797adf5eadb6c733ceed61167806cee7ea7fbc29df',
-        '--format',
-        '{{.Id}}',
-      ],
+      ['image', 'inspect', toolchain.nodeImage, '--format', '{{.Id}}'],
       { encoding: 'utf8' },
     ).trim();
     const script = `const fs=require('node:fs');let denied=false;try{fs.writeFileSync('/etc/hub-probe','x')}catch{denied=true}fs.writeFileSync('/workspace/result.txt','sandbox-result');console.log(JSON.stringify({uid:process.getuid(),denied,network:Object.keys(require('node:os').networkInterfaces()),memory:fs.readFileSync('/sys/fs/cgroup/memory.max','utf8').trim()}));`;
@@ -265,13 +260,7 @@ it('mounts only the explicit CLI profile for token refresh and excludes it from 
     );
     const image = execFileSync(
       'docker',
-      [
-        'image',
-        'inspect',
-        'node:24.19.0-bookworm-slim@sha256:a9f5f7c91a432850b2a8a7797adf5eadb6c733ceed61167806cee7ea7fbc29df',
-        '--format',
-        '{{.Id}}',
-      ],
+      ['image', 'inspect', toolchain.nodeImage, '--format', '{{.Id}}'],
       { encoding: 'utf8' },
     ).trim();
     const command = [

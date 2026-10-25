@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { checkCodexSandbox, type ProbeResult } from '@hub/agent-codex';
+import { checkCodexSandbox, codexVersion, type ProbeResult } from '@hub/agent-codex';
 
 let result: ProbeResult;
 try {
@@ -9,7 +9,7 @@ try {
     (
       await promisify(execFile)(
         'docker',
-        ['image', 'inspect', 'hub-codex:0.163.0', '--format', '{{.Id}}'],
+        ['image', 'inspect', `hub-codex:${codexVersion}`, '--format', '{{.Id}}'],
         {
           timeout: 10000,
           maxBuffer: 8192,

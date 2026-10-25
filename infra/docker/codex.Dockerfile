@@ -1,7 +1,7 @@
-FROM node:24.19.0-bookworm-slim@sha256:a9f5f7c91a432850b2a8a7797adf5eadb6c733ceed61167806cee7ea7fbc29df AS unpack
+FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS unpack
 COPY codex-native.tgz /tmp/codex-native.tgz
 RUN mkdir -p /opt/codex && tar -xzf /tmp/codex-native.tgz -C /opt/codex --strip-components=1
-FROM node:24.19.0-bookworm-slim@sha256:a9f5f7c91a432850b2a8a7797adf5eadb6c733ceed61167806cee7ea7fbc29df
+FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205
 COPY --from=unpack /opt/codex /opt/codex
 RUN ln -s /opt/codex/vendor/x86_64-unknown-linux-musl/bin/codex /usr/local/bin/codex && codex --version
 RUN printf '#!/bin/sh\nexec /usr/local/bin/codex --codex-run-as-apply-patch "$@"\n' > /usr/local/bin/apply_patch && chmod 755 /usr/local/bin/apply_patch && ln -s /usr/local/bin/apply_patch /usr/local/bin/applypatch

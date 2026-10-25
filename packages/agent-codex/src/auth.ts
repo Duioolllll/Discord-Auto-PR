@@ -23,7 +23,7 @@ export const codexPermissionArguments = [
 ];
 
 export function codexSandboxArguments(command: string[]) {
-  // 0.163.0 selects the host platform; "linux" would be interpreted as the command.
+  // 0.164.0 selects the host platform; "linux" would be interpreted as the command.
   return ['codex', 'sandbox', ...codexPermissionArguments, '--', ...command];
 }
 

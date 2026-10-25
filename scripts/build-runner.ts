@@ -2,20 +2,20 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, copyFile, access } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { resolve, join } from 'node:path';
+import toolchain from '../toolchain.json' with { type: 'json' };
 
 if (process.platform !== 'linux' || process.arch !== 'x64')
   throw new Error('The pinned runner currently supports Linux x64 only');
-const context = resolve('.local/runner-context');
+const context = resolve('.local/runner-context', toolchain.codex);
 await mkdir(context, { recursive: true });
 const tar = join(context, 'codex-native.tgz');
-const expected =
-  'sha512-uwRaOsrYogLQhcxAM/GoeWrw0QIWEMRo7c9gM8sKAviVkZQHlu9kRLJ5PkufbV+ABGjyZgIwiFdJ0LCJ0N6e8w==';
+const expected = toolchain.codexLinuxX64Integrity;
 try {
   await access(tar);
 } catch {
   const pack = spawnSync(
     'npm',
-    ['pack', '@openai/codex@0.163.0-linux-x64', '--pack-destination', context, '--json'],
+    ['pack', `@openai/codex@${toolchain.codex}-linux-x64`, '--pack-destination', context, '--json'],
     { encoding: 'utf8' },
   );
   if (pack.status !== 0) throw new Error('Failed to download the pinned Codex npm artifact');
@@ -38,7 +38,7 @@ const build = spawnSync(
     '-f',
     resolve('infra/docker/codex.Dockerfile'),
     '-t',
-    'hub-codex:0.163.0',
+    `hub-codex:${toolchain.codex}`,
     context,
   ],
   { stdio: 'inherit' },

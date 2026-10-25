@@ -2,9 +2,9 @@
   "name": "discord-ai-pr-hub",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.20.0",
+  "packageManager": "pnpm@12.15.0",
   "engines": {
-    "node": ">=24 <25"
+    "node": ">=24.22.1 <25"
   },
   "scripts": {
     "dev": "pnpm --filter @hub/control-api dev",
@@ -14,6 +14,7 @@
     "dev:worker": "pnpm --filter @hub/worker-supervisor dev",
     "build": "turbo run build",
     "typecheck": "tsc --noEmit",
+    "toolchain:check": "node scripts/check-toolchain.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -41,7 +42,7 @@
     "@hub/policy": "workspace:*",
     "@hub/queue": "workspace:*",
     "@eslint/js": "9.39.5",
-    "@types/node": "24.10.1",
+    "@types/node": "24.19.2",
     "@types/pg": "8.15.6",
     "eslint": "9.39.5",
     "prettier": "3.6.2",
@@ -55,19 +56,5 @@
     "@playwright/test": "1.62.1",
     "@sparticuz/chromium": "153.0.0",
     "@octokit/app": "16.1.4"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "@prisma/client",
-      "@prisma/engines",
-      "prisma"
-    ],
-    "overrides": {
-      "deepmerge-ts": "8.0.2",
-      "effect": "3.22.4",
-      "zod": "4.6.7",
-      "undici@6": "6.29.1"
-    }
   }
 }
