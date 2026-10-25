@@ -204,6 +204,9 @@ Ubuntu에서는 테스트용으로 `sudo apt-get install build-essential`을 사
 
 실제 확인 환경: **Linux kernel 6.18.55, Docker Engine 28.4.0, cgroup v2, Linux amd64, 일반 사용자 UID 1000**.
 이 환경에서 실제 Docker 내부 Codex 0.163.0의 격리 검사가 통과했습니다.
+추가로 **GitHub Ubuntu / kernel 6.17.0-1022-azure / Docker 28.0.4 / cgroup v2 / UID 1001**에서
+전용 AppArmor를 외부·내부 모두 enforce 모드로 유지한 검사와 전체 CI가 통과했습니다.
+검증 기록: [GitHub Actions](https://github.com/Duioolllll/Discord-Auto-PR/actions/runs/40154578765).
 사용자가 보고한 Ubuntu 26.10 / WSL2 / kernel 6.18.33.2 / Docker 29.1.3 머신에는 이 세션에서 직접 접속하지 않았습니다.
 그 머신의 최종 지원 여부는 아래 업데이트 후 동일 검사를 실행해 확인해야 합니다.
 
@@ -238,6 +241,7 @@ pnpm runner:check
 `diagnostic.code`는 비밀값이 없는 단계 이름입니다. 예를 들어 `OUTER_SWAP`, `OUTER_CPU`는
 실제 cgroup 제한 확인 실패, `INNER_NAMESPACES`는 내부 namespace 분리 실패,
 `INNER_CREDENTIALS`는 인증 격리 실패, `INNER_HELPER`는 새 이미지의 patch helper 실행 실패를 뜻합니다.
+`OUTER_APPARMOR`는 실제 커널의 선택한 AppArmor enforce 모드 확인에 실패한 경우입니다.
 진단을 더 자세히 보려고 raw 환경변수나 로그인 파일을 출력하지 마세요.
 
 호스트 전원 장애·supervisor의 SIGKILL·daemon 통신 두절은 프로세스의 `finally`를 실행하지 못하게 할 수 있습니다.
@@ -288,3 +292,30 @@ pnpm dev:worker
 ```
 
 관련 안내: [전체 설치·실행](getting-started.md), [구현 상태](implementation-status.md).
+
+## 9. 수정 파일과 검증 결과
+
+| 파일                                                                                                                                                                                                                    | 변경 목적                                                              |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| [index.ts](../packages/agent-codex/src/index.ts), [container.ts](../packages/agent-codex/src/container.ts), [probe.ts](../packages/agent-codex/src/probe.ts), [auth.ts](../packages/agent-codex/src/auth.ts)            | adapter 연결, 생성 전후 정책 확인, 실제 다중 격리 검사, 인증·명령 권한 |
+| [check-runner.ts](../scripts/check-runner.ts), [package.json](../package.json)                                                                                                                                          | `.env` 읽기, 안전한 JSON 실패 보고, 정책 감사 명령                     |
+| [codex.Dockerfile](../infra/docker/codex.Dockerfile)                                                                                                                                                                    | 비공개 HOME 초기화·읽기 전용 patch helper                              |
+| [infra/security](../infra/security/README.md)                                                                                                                                                                           | 고정 Moby 원본·생성기·seccomp/AppArmor 정책·라이선스                   |
+| [sandbox.test.ts](../tests/integration/sandbox.test.ts), [seccomp-probe.c](../tests/fixtures/seccomp-probe.c), [seccomp.test.ts](../tests/unit/seccomp.test.ts), [codex-auth.test.ts](../tests/unit/codex-auth.test.ts) | 실제 kernel·namespace·인증·정리 검사와 정책 회귀 테스트                |
+| [ci.yml](../.github/workflows/ci.yml), [.env.example](../.env.example)                                                                                                                                                  | enforce AppArmor로 CI 검증·명시적 선택 설정                            |
+| [README](../README.md), [getting-started.md](getting-started.md), [implementation-status.md](implementation-status.md), 이 문서                                                                                         | 설치·PULL·진단·지원 범위·검증 결과                                     |
+
+전체 파일 목록은 `git diff --name-only 416d2e3 HEAD`로 확인할 수 있습니다.
+
+| 실행 명령                              | 확인 결과                                       |
+| -------------------------------------- | ----------------------------------------------- |
+| `pnpm --filter @hub/agent-codex build` | 성공                                            |
+| `pnpm runner:check`                    | 실제 sandbox에서 `{"ready":true,"reason":"OK"}` |
+| `pnpm build`                           | 12개 패키지 성공                                |
+| `pnpm test`                            | 65개 통과                                       |
+| `pnpm test:integration`                | 31개 통과                                       |
+| `pnpm test:e2e`                        | GitHub CI에서 1개 통과                          |
+| lint·typecheck·format·`security:check` | 통과                                            |
+
+실제 GitHub App PR 생성·병합이나 모델 요청은 수행하지 않았습니다.
+로그인 프로필·개인 키·봇 토큰을 출력하거나 커밋하지 않았습니다.
