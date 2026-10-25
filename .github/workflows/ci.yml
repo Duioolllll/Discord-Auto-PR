@@ -42,6 +42,10 @@ jobs:
           docker version --format '{{.Server.Version}}'
           docker info --format '{{.KernelVersion}} {{.CgroupVersion}} {{json .SecurityOptions}}'
       - run: pnpm runner:check
+      - name: Count Docker AppArmor denials
+        if: failure()
+        run: |
+          sudo dmesg --notime --color=never | python3 -c 'import json,sys; lines=[line for line in sys.stdin if "apparmor=\"DENIED\"" in line and "profile=\"docker-default\"" in line]; print(json.dumps({"docker_default_denials":len(lines),"mount_denials":sum("operation=\"mount\"" in line for line in lines)}))'
       - run: docker pull node:24.19.0-bookworm-slim@sha256:a9f5f7c91a432850b2a8a7797adf5eadb6c733ceed61167806cee7ea7fbc29df
       - run: pnpm format:check && pnpm lint && pnpm typecheck
       - run: pnpm test && pnpm test:integration

@@ -18,7 +18,7 @@ export function classifyProbeFailure(stderr: string): ProbeReason {
   )
     return 'CODEX_HOME_UNAVAILABLE';
   if (
-    /No permissions.*namespace|Creating new namespace failed|unshare user ns|namespace.*Operation not permitted|user\.max_user_namespaces|bwrap:.*(?:mount|pivot_root).*(?:denied|not permitted)/i.test(
+    /No permissions.*namespace|Creating new namespace failed|unshare user ns|namespace.*Operation not permitted|user\.max_user_namespaces|bwrap:.*(?:mount|pivot_root|slave|private).*(?:denied|not permitted)/i.test(
       stderr,
     )
   )
@@ -45,6 +45,11 @@ const diagnosticCodes = [
   'INNER_NETWORK',
 ];
 export function probeDiagnostic(stderr: string) {
+  if (/bwrap:.*(?:mount|pivot_root|slave|private).*(?:denied|not permitted)/i.test(stderr))
+    return 'BWRAP_MOUNT_DENIED';
+  if (/bwrap:.*(?:No permissions.*namespace|namespace.*(?:denied|not permitted))/i.test(stderr))
+    return 'BWRAP_NAMESPACE_DENIED';
+  if (/bwrap:/i.test(stderr)) return 'BWRAP_SETUP_FAILED';
   return (
     diagnosticCodes.find((code) => stderr.includes(`HUB_PROBE_${code}`)) ?? 'ISOLATION_PROBE_FAILED'
   );

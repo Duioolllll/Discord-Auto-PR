@@ -155,4 +155,7 @@ it('classifies stderr without returning supplied text or credentials', () => {
   );
   expect(probeDiagnostic('HUB_PROBE_OUTER_SWAP')).toBe('OUTER_SWAP');
   expect(probeDiagnostic('HUB_PROBE_secret-value')).toBe('ISOLATION_PROBE_FAILED');
+  const denied = "bwrap: Can't make / slave: Permission denied";
+  expect(classifyProbeFailure(denied)).toBe('NAMESPACE_SANDBOX_UNAVAILABLE');
+  expect(probeDiagnostic(denied)).toBe('BWRAP_MOUNT_DENIED');
 });
