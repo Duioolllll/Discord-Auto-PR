@@ -17,9 +17,9 @@ async function initialize() {
   }
   const current = parseEnv(original ?? '');
   const defaults = {
-    DATABASE_URL: 'postgresql://hub:hub_local_only@127.0.0.1:5432/hub',
-    TEST_DATABASE_URL: 'postgresql://hub:hub_local_only@127.0.0.1:5432/hub_test',
-    REDIS_URL: 'redis://127.0.0.1:6379',
+    DATABASE_URL: 'postgresql://hub:hub_local_only@127.0.0.1:5433/hub_cli',
+    TEST_DATABASE_URL: 'postgresql://hub:hub_local_only@127.0.0.1:5433/hub_cli_test',
+    REDIS_URL: 'redis://127.0.0.1:6380',
     CONTROL_API_URL: 'http://127.0.0.1:3001',
     HOST: '127.0.0.1',
     PORT: '3001',

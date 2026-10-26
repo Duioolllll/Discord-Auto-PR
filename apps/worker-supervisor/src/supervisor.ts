@@ -18,7 +18,6 @@ const Claim = z.object({
     engine: Engine,
     kind: Kind,
     timeoutSeconds: z.number(),
-    maxCostCents: z.number(),
   }),
 });
 export async function supervise(options: {
@@ -120,7 +119,6 @@ export async function supervise(options: {
           repo: { owner, name, baseSha: snapshot.baseSha },
           limits: {
             timeoutSeconds: lease.job.timeoutSeconds,
-            maxCostUsd: lease.job.maxCostCents / 100,
             maxOutputBytes: 1024 * 1024,
           },
         },
@@ -178,7 +176,6 @@ export async function supervise(options: {
               'Worker execution failed or requires reconciliation. Sensitive engine output withheld.',
             changedPaths: [],
             artifacts: [],
-            usage: [],
           },
         })
         .catch(() => undefined);

@@ -27,13 +27,13 @@ if (existsSync('.env')) process.loadEnvFile('.env');
 const connection = process.env.TEST_DATABASE_URL;
 if (!connection) throw new Error('TEST_DATABASE_URL required; run pnpm setup:local');
 const testUrl = new URL(connection);
-if (testUrl.pathname !== '/hub_test' || !['127.0.0.1', 'localhost'].includes(testUrl.hostname))
+if (testUrl.pathname !== '/hub_cli_test' || !['127.0.0.1', 'localhost'].includes(testUrl.hostname))
   throw new Error(
-    'Integration tests require a dedicated loopback hub_test database; refusing destructive cleanup.',
+    'Integration tests require a dedicated loopback hub_cli_test database; refusing destructive cleanup.',
   );
 const config: ApiEnvironment = {
   DATABASE_URL: connection,
-  REDIS_URL: process.env.REDIS_URL ?? 'redis://127.0.0.1:6379',
+  REDIS_URL: process.env.REDIS_URL ?? 'redis://127.0.0.1:6380',
   ADMIN_API_TOKEN: 'admin-test-'.padEnd(64, 'a'),
   BOT_API_TOKEN: 'bot-test-'.padEnd(64, 'b'),
   WORKER_ENROLLMENT_TOKEN: 'enroll-test-'.padEnd(64, 'c'),
@@ -86,7 +86,7 @@ beforeAll(async () => {
 });
 beforeEach(async () => {
   github.reset();
-  // Only the explicitly guarded hub_test database is ever truncated.
+  // Only the explicitly guarded hub_cli_test database is ever truncated.
   await db.$executeRawUnsafe(
     'TRUNCATE TABLE "Repository", "RoleBinding", "Job", "Worker", "JobAttempt", "JobEvent", "WebhookInbox", "TransactionOutbox", "Approval", "AuditEvent", "Identity", "DeadLetter" CASCADE',
   );
@@ -96,7 +96,6 @@ beforeEach(async () => {
   await db.identity.create({
     data: { actorId: `discord:${userId}`, githubId: '456', githubLogin: 'requester' },
   });
-  await db.budget.create({ data: { repositoryId: repository.id, limitCents: 100000 } });
   await db.roleBinding.create({
     data: { actorId: `discord:${userId}`, repositoryId: repository.id, role: 'developer' },
   });
@@ -109,7 +108,7 @@ afterAll(async () => {
 });
 
 describe('control API with real PostgreSQL and Redis', () => {
-  it('routes all eleven Discord commands through the real API with identity, role, approval and SHA policy checks', async () => {
+  it('routes all ten Discord commands through the real API with identity, role, approval and SHA policy checks', async () => {
     const reviewer = '987654321098765432';
     const server = buildApp({
       db,
@@ -172,10 +171,8 @@ describe('control API with real PostgreSQL and Redis', () => {
       expect((await invoke('logs', userId, development.id)).reply).toContain('QUEUED');
       expect((await invoke('cancel', userId, refactor.id)).reply).toContain('CANCELLED');
       expect((await invoke('workers')).reply).toContain('ADMIN_REQUIRED');
-      expect((await invoke('cost')).reply).toContain('PROJECT_ADMIN_REQUIRED');
       await register();
       expect((await invoke('workers', reviewer)).reply).toContain('test: codex');
-      expect((await invoke('cost', reviewer)).reply).toContain('기록된 비용');
       await db.job.update({ where: { id: development.id }, data: { status: 'PR_OPEN' } });
       await db.pRLink.create({
         data: {
@@ -298,11 +295,10 @@ describe('control API with real PostgreSQL and Redis', () => {
     }
   });
 
-  it('shows distinct Discord errors for real repository, role, budget and bot authentication failures', async () => {
+  it('shows distinct Discord errors for real repository, role and bot authentication failures', async () => {
     const server = buildApp({ db, config, pingRedis: () => queue.connection.ping(), github });
     const base = await server.listen({ host: '127.0.0.1', port: 0 });
     try {
-      await db.budget.updateMany({ data: { limitCents: 0 } });
       for (const scenario of [
         {
           repository: 'test/missing',
@@ -317,13 +313,6 @@ describe('control API with real PostgreSQL and Redis', () => {
           token: config.BOT_API_TOKEN,
           code: 'FORBIDDEN',
           status: 403,
-        },
-        {
-          repository: 'test/installed',
-          userId,
-          token: config.BOT_API_TOKEN,
-          code: 'BUDGET_EXCEEDED',
-          status: 402,
         },
         {
           repository: 'test/installed',
@@ -415,7 +404,6 @@ describe('control API with real PostgreSQL and Redis', () => {
               summary: 'agent success claim',
               changedPaths: [],
               artifacts: [],
-              usage: [],
             };
           },
         },
@@ -452,7 +440,6 @@ describe('control API with real PostgreSQL and Redis', () => {
         summary: 'fixture',
         changedPaths: ['README.md'],
         artifacts: [],
-        usage: [],
       },
     };
     github.failure = true;
@@ -517,7 +504,6 @@ describe('control API with real PostgreSQL and Redis', () => {
               summary: 'fixture tested',
               changedPaths: [],
               artifacts: [],
-              usage: [{ source: 'token_estimate', inputTokens: 10, outputTokens: 20 }],
             };
           },
         },
@@ -535,45 +521,44 @@ describe('control API with real PostgreSQL and Redis', () => {
       expect(merges.some((response) => response.statusCode === 200)).toBe(true);
       expect(github.merges).toBe(1);
       expect(await db.mergeRecord.count()).toBe(1);
-      expect(
-        (
-          await post(`/jobs/${jobId}/cost/reconcile`, {
-            actualCents: 42,
-            evidenceReference: 'fixture-invoice',
-          })
-        ).statusCode,
-      ).toBe(200);
-      expect(
-        (
-          await post(`/jobs/${jobId}/cost/reconcile`, {
-            actualCents: 42,
-            evidenceReference: 'fixture-invoice',
-          })
-        ).statusCode,
-      ).toBe(409);
       expect((await db.job.findUniqueOrThrow({ where: { id: jobId } })).status).toBe('MERGED');
-      const costs = (await app.inject({ url: '/cost', headers: admin })).json();
-      expect(
-        costs.bySource.some((row: { source: string }) => row.source === 'token_estimate'),
-      ).toBe(true);
     } finally {
       await server.close();
       await rm(root, { recursive: true, force: true });
     }
   });
-  it('atomically reserves budget and releases a queued cancellation', async () => {
-    const repo = await db.repository.findUniqueOrThrow({ where: { fullName: 'test/installed' } });
-    await db.budget.update({ where: { repositoryId: repo.id }, data: { limitCents: 500 } });
+  it('accepts concurrent CLI jobs without accounting setup and revokes a queued cancellation', async () => {
     const responses = await Promise.all([post('/jobs', body()), post('/jobs', body())]);
-    expect(responses.map((response) => response.statusCode).sort()).toEqual([201, 402]);
+    expect(responses.map((response) => response.statusCode)).toEqual([201, 201]);
+    const cancelled = responses[0]!.json().job;
+    expect(cancelled).not.toHaveProperty('maxCostCents');
+    expect((await post(`/jobs/${cancelled.id}/cancel`, {})).statusCode).toBe(200);
+    const worker = await register();
+    const claimed = (await post('/workers/claim', {}, worker.headers)).json();
+    expect(claimed.job.id).toBe(responses[1]!.json().job.id);
+    expect(claimed.job).not.toHaveProperty('maxCostCents');
+  });
+  it('removes accounting endpoints and rejects old job budget fields', async () => {
+    const created = await create();
+    const repository = await db.repository.findUniqueOrThrow({
+      where: { fullName: 'test/installed' },
+    });
+    expect((await post('/jobs', { ...body(), maxCostCents: 500 })).statusCode).toBe(400);
+    expect((await app.inject({ url: '/cost', headers: admin })).statusCode).toBe(404);
     expect(
-      (await db.budget.findUniqueOrThrow({ where: { repositoryId: repo.id } })).reservedCents,
-    ).toBe(500);
-    const job = await db.job.findFirstOrThrow();
-    await post(`/jobs/${job.id}/cancel`, {});
+      (await post(`/repositories/${repository.id}/budget`, { limitCents: 1000 })).statusCode,
+    ).toBe(404);
     expect(
-      (await db.budget.findUniqueOrThrow({ where: { repositoryId: repo.id } })).reservedCents,
-    ).toBe(0);
+      (
+        await post(`/jobs/${created.id}/cost/reconcile`, {
+          actualCents: 1,
+          evidenceReference: 'retired',
+        })
+      ).statusCode,
+    ).toBe(404);
+    const repositories = (await app.inject({ url: '/repositories', headers: admin })).json();
+    expect(repositories[0]).not.toHaveProperty('budget');
+    expect(commands.some((command) => command.name === 'cost')).toBe(false);
   });
   it('blocks old approval or old green CI after a new head commit', async () => {
     const created = await post('/jobs', body(), bot);
@@ -772,7 +757,7 @@ describe('control API with real PostgreSQL and Redis', () => {
   it('enforces per-worker capacity and engine eligibility', async () => {
     await create();
     await create();
-    const incompatible = await register(['pr-agent']);
+    const incompatible = await register([]);
     expect((await post('/workers/claim', {}, incompatible.headers)).statusCode).toBe(204);
     const worker = await register();
     const responses = await Promise.all(
@@ -837,7 +822,7 @@ describe('control API with real PostgreSQL and Redis', () => {
         leaseToken: lease.leaseToken,
         leaseVersion: lease.leaseVersion,
         eventId: 'late',
-        result: { status: 'success', summary: 'done', changedPaths: [], artifacts: [], usage: [] },
+        result: { status: 'success', summary: 'done', changedPaths: [], artifacts: [] },
       },
       worker.headers,
     );
@@ -860,7 +845,7 @@ describe('control API with real PostgreSQL and Redis', () => {
         leaseToken: lease.leaseToken,
         leaseVersion: lease.leaseVersion,
         eventId: 'cancelled',
-        result: { status: 'success', summary: '', changedPaths: [], artifacts: [], usage: [] },
+        result: { status: 'success', summary: '', changedPaths: [], artifacts: [] },
       },
       worker.headers,
     );
@@ -886,7 +871,6 @@ describe('control API with real PostgreSQL and Redis', () => {
         summary: 'fixture result',
         changedPaths: [],
         artifacts: [],
-        usage: [],
       },
     };
     const responses = await Promise.all([

@@ -12,6 +12,8 @@ import {
   codexLoginEnvironment,
   lockCodexProfile,
   validateCodexAuthDirectory,
+  sandboxArguments,
+  type SandboxOptions,
 } from '@hub/agent-codex';
 
 it('uses a dedicated CLI profile without inheriting platform or API credentials', () => {
@@ -31,6 +33,21 @@ it('uses a dedicated CLI profile without inheriting platform or API credentials'
     HTTPS_PROXY: 'https://proxy.example',
     CODEX_HOME: '/private/worker-profile',
   });
+});
+it('refuses credential environment injection through the container interface', () => {
+  expect(() =>
+    sandboxArguments(
+      'fixture',
+      {
+        image: `sha256:${'a'.repeat(64)}`,
+        workspace: '/tmp/fixture',
+        timeoutSeconds: 10,
+        maxOutputBytes: 4096,
+        env: { CODEX_API_KEY: 'fixture-do-not-echo' },
+      } as SandboxOptions,
+      ['codex'],
+    ),
+  ).toThrow('Custom container environment is not supported');
 });
 it('recognizes the pinned CLI ChatGPT status and rejects API-key or failed status', () => {
   expect(chatGPTLoginConfirmed({ code: 0, output: '', stderr: 'Logged in using ChatGPT\n' })).toBe(
@@ -61,6 +78,7 @@ it('places exec-only options after the CLI subcommand and retains the sandbox', 
   expect(command.indexOf('--ignore-user-config')).toBeGreaterThan(command.indexOf('exec'));
   expect(command.indexOf('--ignore-rules')).toBeGreaterThan(command.indexOf('exec'));
   expect(command).toContain('default_permissions="hub"');
+  expect(command).toContain('forced_login_method="chatgpt"');
   expect(command.some((argument) => argument.includes('extends=":workspace"'))).toBe(true);
   expect(command.some((argument) => argument.includes('/home/runner/.codex"="deny"'))).toBe(true);
   expect(command).toContain('--ephemeral');

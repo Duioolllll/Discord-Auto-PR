@@ -126,20 +126,19 @@ it('applies the GitHub deadline to installation authentication subrequests', asy
     fetcher.mock.calls.some(([url]) => String(url).endsWith('/app/installations/42/access_tokens')),
   ).toBe(true);
 });
-it('rejects observations outside the database integer range before any publishing', () => {
+it('keeps billing metadata out of the CLI execution result contract', () => {
   const result = {
     status: 'success',
     summary: 'fixture',
     changedPaths: [],
     artifacts: [],
-    usage: [{ source: 'token_estimate', inputTokens: 2147483647, outputTokens: 1, amountUsd: 1 }],
   };
   expect(RunResult.safeParse(result).success).toBe(true);
   expect(
-    RunResult.safeParse({ ...result, usage: [{ ...result.usage[0], inputTokens: 2147483648 }] })
-      .success,
+    RunResult.safeParse({
+      ...result,
+      usage: [{ source: 'token_estimate', inputTokens: 2147483648 }],
+    }).success,
   ).toBe(false);
-  expect(
-    RunResult.safeParse({ ...result, usage: [{ ...result.usage[0], amountUsd: 3000 }] }).success,
-  ).toBe(false);
+  expect(RunResult.safeParse({ ...result, amountUsd: 3000 }).success).toBe(false);
 });

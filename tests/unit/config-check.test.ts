@@ -7,8 +7,8 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { checkConfiguration, formatChecks, type ConfigCheck } from '../../scripts/check-config.js';
 
 const local = () => ({
-  DATABASE_URL: 'postgresql://fixture:password@127.0.0.1:5432/hub',
-  REDIS_URL: 'redis://127.0.0.1:6379',
+  DATABASE_URL: 'postgresql://fixture:password@127.0.0.1:5433/hub_cli',
+  REDIS_URL: 'redis://127.0.0.1:6380',
   CONTROL_API_URL: 'http://127.0.0.1:3001',
   ADMIN_API_TOKEN: 'fixture-admin-'.padEnd(64, 'a'),
   BOT_API_TOKEN: 'fixture-api-bot-'.padEnd(64, 'b'),
@@ -22,14 +22,27 @@ const discord = () => ({
   DISCORD_APPLICATION_ID: '123456789012345678',
   DISCORD_GUILD_ID: '234567890123456789',
 });
-const worker = () => ({
-  ...local(),
-  HUB_CODEX_IMAGE: `sha256:${'a'.repeat(64)}`,
-  HUB_RUNNER_NETWORK: 'hub-egress-tests',
-  WORKER_TEST_COMMAND: '["node","--test"]',
-  HUB_CODEX_AUTH_MODE: 'api-key',
-  HUB_CODEX_API_KEY: 'fixture-openai-key',
-});
+const worker = async () => {
+  const profile = await directory();
+  await writeFile(
+    join(profile, 'auth.json'),
+    JSON.stringify({
+      tokens: {
+        access_token: 'fixture-access',
+        refresh_token: 'fixture-refresh',
+        id_token: 'fixture-id',
+      },
+    }),
+    { mode: 0o600 },
+  );
+  return {
+    ...local(),
+    HUB_CODEX_IMAGE: `sha256:${'a'.repeat(64)}`,
+    HUB_RUNNER_NETWORK: 'hub-egress-tests',
+    WORKER_TEST_COMMAND: '["node","--test"]',
+    HUB_CODEX_AUTH_DIR: profile,
+  };
+};
 const failures = (checks: ConfigCheck[]) => checks.filter((check) => check.status === 'fail');
 const privateKey = () =>
   generateKeyPairSync('rsa', { modulusLength: 2048 })
@@ -225,9 +238,10 @@ it('validates the effective webhook file instead of the generated unused inline 
 });
 it('checks worker configuration without executing Docker or a test command', async () => {
   const fetcher = vi.spyOn(globalThis, 'fetch');
-  expect(failures(await checkConfiguration('worker', worker()))).toEqual([]);
+  const env = await worker();
+  expect(failures(await checkConfiguration('worker', env))).toEqual([]);
   const checks = await checkConfiguration('worker', {
-    ...worker(),
+    ...env,
     HUB_CODEX_IMAGE: 'hub-codex:latest',
     HUB_RUNNER_NETWORK: "sdcom1214's network",
     WORKER_TEST_COMMAND: '["sh","-c","echo sensitive-command"]',
@@ -238,31 +252,16 @@ it('checks worker configuration without executing Docker or a test command', asy
   expect(formatChecks(checks)).not.toContain('sensitive-command');
   expect(fetcher).not.toHaveBeenCalled();
 });
-it('does not require an API key in ChatGPT mode or validate a disabled API-key file', async () => {
-  const profile = await directory();
-  await writeFile(
-    join(profile, 'auth.json'),
-    JSON.stringify({
-      tokens: {
-        access_token: 'fixture-access',
-        refresh_token: 'fixture-refresh',
-        id_token: 'fixture-id',
-      },
-    }),
-    { mode: 0o600 },
-  );
-  const checks = await checkConfiguration('worker', {
-    ...worker(),
-    HUB_CODEX_AUTH_MODE: 'chatgpt',
-    HUB_CODEX_AUTH_DIR: profile,
-    HUB_CODEX_API_KEY: '',
-    HUB_CODEX_API_KEY_FILE: '/absent-api-key-file',
+it('requires a private CLI login profile without exposing credentials', async () => {
+  const env = await worker();
+  expect(failures(await checkConfiguration('worker', env))).toEqual([]);
+  const missing = await checkConfiguration('worker', {
+    ...env,
+    HUB_CODEX_AUTH_DIR: '/absent-cli-profile',
   });
-  expect(failures(checks)).toEqual([]);
-  expect(checks).toContainEqual(
-    expect.objectContaining({ key: 'HUB_CODEX_API_KEY', status: 'warn' }),
-  );
-  expect(formatChecks(checks)).not.toContain('fixture-access');
+  expect(failures(missing).map((check) => check.key)).toContain('HUB_CODEX_AUTH_DIR');
+  expect(formatChecks(missing)).not.toContain('/absent-cli-profile');
+  expect(formatChecks(await checkConfiguration('worker', env))).not.toContain('fixture-access');
 });
 it('prints safe help and rejects an unknown scope before loading local credentials', () => {
   const output = execFileSync(

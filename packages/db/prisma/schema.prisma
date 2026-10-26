@@ -17,9 +17,7 @@ model Repository {
   baseBranch     String @default("main")
   requiredChecks String[] @default([])
   allowedEngines String[] @default(["codex"])
-  maxReviewIterations Int @default(3)
   verifiedAt     DateTime?
-  budget         Budget?
   jobs           Job[]
   roles          RoleBinding[]
 }
@@ -47,9 +45,7 @@ model Job {
   attemptSequence   Int @default(0)
   errorCode         String?
   baseSha           String?
-  maxCostCents      Int @default(500)
   timeoutSeconds    Int @default(600)
-  reviewIterations  Int @default(0)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   repository        Repository @relation(fields: [repositoryId], references: [id])
@@ -58,8 +54,6 @@ model Job {
   approvals         Approval[]
   pullRequest       PRLink?
   steps             JobStep[]
-  reservation       BudgetReservation?
-  usage             UsageSample[]
   mergeRecord       MergeRecord?
   @@index([status, createdAt])
 }
@@ -134,37 +128,6 @@ model Identity {
   githubId    String @unique
   githubLogin String
   verifiedAt  DateTime @default(now())
-}
-
-model Budget {
-  id           String @id @default(uuid())
-  repositoryId String @unique
-  limitCents   Int
-  reservedCents Int @default(0)
-  spentCents   Int @default(0)
-  repository   Repository @relation(fields: [repositoryId], references: [id])
-}
-
-model BudgetReservation {
-  id        String @id @default(uuid())
-  jobId     String @unique
-  cents     Int
-  status    String @default("RESERVED")
-  job       Job @relation(fields: [jobId], references: [id])
-}
-
-model UsageSample {
-  id             String @id @default(uuid())
-  jobId          String
-  eventId        String @unique
-  source         String
-  amountMicros   Int
-  currency       String @default("USD")
-  pricingVersion String
-  inputTokens    Int?
-  outputTokens   Int?
-  createdAt      DateTime @default(now())
-  job            Job @relation(fields: [jobId], references: [id])
 }
 
 model PRLink {

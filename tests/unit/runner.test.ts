@@ -3,17 +3,18 @@ import { parseCodexEvents, sandboxArguments } from '@hub/agent-codex';
 import { validateChanges } from '@hub/github';
 
 describe('Codex versioned event protocol', () => {
-  it('requires a completed turn and parses usage without claiming provider billing', () => {
+  it('requires a completed CLI turn and ignores provider accounting metadata', () => {
     const output = [
       { type: 'item.completed', item: { type: 'agent_message', text: 'implemented' } },
-      { type: 'turn.completed', usage: { input_tokens: 12, output_tokens: 4 } },
+      { type: 'turn.completed', usage: { input_tokens: 1e30, output_tokens: -1 } },
     ]
       .map((event) => JSON.stringify(event))
       .join('\n');
-    expect(parseCodexEvents(output)).toMatchObject({
+    expect(parseCodexEvents(output)).toEqual({
       status: 'success',
       summary: 'implemented',
-      usage: [{ source: 'token_estimate', inputTokens: 12, outputTokens: 4 }],
+      changedPaths: [],
+      artifacts: [],
     });
     expect(parseCodexEvents('{"type":"turn.started"}').status).toBe('failed');
     expect(() => parseCodexEvents('invalid JSON')).toThrow();

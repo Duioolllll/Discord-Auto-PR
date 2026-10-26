@@ -20,8 +20,8 @@ import { FakeGitHub } from '../fixtures/github.js';
 process.loadEnvFile('.env');
 const connection = process.env.TEST_DATABASE_URL!;
 const url = new URL(connection);
-if (url.pathname !== '/hub_test' || !['localhost', '127.0.0.1'].includes(url.hostname))
-  throw new Error('Use the dedicated loopback hub_test database');
+if (url.pathname !== '/hub_cli_test' || !['localhost', '127.0.0.1'].includes(url.hostname))
+  throw new Error('Use the dedicated loopback hub_cli_test database');
 const config = {
   DATABASE_URL: connection,
   REDIS_URL: process.env.REDIS_URL!,
@@ -47,7 +47,6 @@ const job = () =>
       instruction: 'regression fixture',
       engine: 'codex',
       kind: 'develop',
-      maxCostCents: 1,
       timeoutSeconds: 30,
     })
     .then((r) => r.job);
@@ -88,7 +87,6 @@ beforeEach(async () => {
     data: {
       fullName: 'test/reliability',
       installationId: '42',
-      budget: { create: { limitCents: 100000 } },
     },
   });
   github = new FakeGitHub();
@@ -264,7 +262,7 @@ it('returns the PR relation and newest logs while preserving forward event pagin
     await app.close();
   }
 });
-it('rejects token counter overflow at the API and stores the maximum valid count', async () => {
+it('accepts CLI completion without usage and rejects retired billing contracts', async () => {
   await job();
   const worker = await service.register({ name: 'fixture', engines: ['codex'], maxConcurrent: 1 });
   const lease = (await service.claim(worker.workerId))!;
@@ -276,7 +274,6 @@ it('rejects token counter overflow at the API and stores the maximum valid count
     summary: 'fixture',
     changedPaths: [],
     artifacts: [],
-    usage: [{ source: 'token_estimate', inputTokens: 2147483648 }],
   };
   try {
     const call = (payload: unknown) =>
@@ -286,13 +283,25 @@ it('rejects token counter overflow at the API and stores the maximum valid count
         headers: { authorization: `Bearer ${worker.token}` },
         payload: payload as Record<string, unknown>,
       });
-    expect((await call({ ...proof, eventId: 'overflow', result })).statusCode).toBe(400);
+    expect(
+      (
+        await call({
+          ...proof,
+          eventId: 'billing',
+          result: {
+            ...result,
+            usage: [{ source: 'token_estimate', inputTokens: 2147483648 }],
+          },
+        })
+      ).statusCode,
+    ).toBe(400);
     expect((await db.job.findUniqueOrThrow({ where: { id: lease.job.id } })).status).toBe(
       'RUNNING',
     );
-    result.usage[0]!.inputTokens = 2147483647;
     expect((await call({ ...proof, eventId: 'valid', result })).statusCode).toBe(200);
-    expect((await db.usageSample.findFirstOrThrow()).inputTokens).toBe(2147483647);
+    expect(
+      (await db.jobAttempt.findUniqueOrThrow({ where: { id: lease.attemptId } })).result,
+    ).not.toHaveProperty('usage');
   } finally {
     await app.close();
   }
@@ -333,7 +342,6 @@ it('does not publish when shutdown arrives during recursive collection', async (
             summary: 'fixture',
             changedPaths: [],
             artifacts: [],
-            usage: [],
           };
         },
       },
@@ -381,7 +389,6 @@ it('quarantines an inaccessible tree and proceeds to the next job', async () => 
             summary: 'fixture',
             changedPaths: [],
             artifacts: [],
-            usage: [],
           };
         },
       },

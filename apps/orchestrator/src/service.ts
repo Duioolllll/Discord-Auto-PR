@@ -2,7 +2,6 @@ import { createHash, randomBytes } from 'node:crypto';
 import { Prisma, type Database, type Transaction } from '@hub/db';
 import type { CreateJob, RunResult } from '@hub/contracts';
 import { DomainError, requireCondition, redactLog } from '@hub/policy';
-import { reserveBudget, Workflow } from './workflow.js';
 export { Workflow } from './workflow.js';
 
 export const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
@@ -47,11 +46,6 @@ export class Orchestrator {
   }
 
   async createJob(actor: Actor, input: CreateJob) {
-    requireCondition(
-      input.engine !== 'pr-agent' || input.kind === 'review',
-      'UNSUPPORTED_ENGINE_KIND',
-      400,
-    );
     const repository = await this.db.repository.findUnique({
       where: { fullName: input.repository },
     });
@@ -74,11 +68,9 @@ export class Orchestrator {
             instruction: input.instruction,
             engine: input.engine,
             kind: input.kind,
-            maxCostCents: input.maxCostCents,
             timeoutSeconds: input.timeoutSeconds,
           },
         });
-        await reserveBudget(tx, repository.id, job.id, input.maxCostCents);
         await tx.jobEvent.create({
           data: {
             jobId: job.id,
@@ -142,16 +134,6 @@ export class Orchestrator {
         },
       });
       await record(tx, id, actor.id, 'job.cancelled');
-      if (job.status === 'QUEUED') {
-        const reservation = await tx.budgetReservation.findUnique({ where: { jobId: id } });
-        if (reservation?.status === 'RESERVED') {
-          await tx.budget.update({
-            where: { repositoryId: job.repositoryId },
-            data: { reservedCents: { decrement: reservation.cents } },
-          });
-          await tx.budgetReservation.update({ where: { jobId: id }, data: { status: 'RELEASED' } });
-        }
-      }
       return tx.job.findUniqueOrThrow({ where: { id } });
     });
   }
@@ -212,7 +194,6 @@ export class Orchestrator {
           kind: job.kind,
           engine: job.engine,
           timeoutSeconds: job.timeoutSeconds,
-          maxCostCents: job.maxCostCents,
         },
         attemptId: attempt.id,
         leaseVersion: attempt.leaseVersion,
@@ -333,12 +314,6 @@ export class Orchestrator {
         attemptId,
         status,
       });
-      await new Workflow(this.db, this).recordUsage(
-        tx,
-        attempt.jobId,
-        input.eventId,
-        input.result.usage,
-      );
       return { accepted: true, duplicate: false };
     });
   }

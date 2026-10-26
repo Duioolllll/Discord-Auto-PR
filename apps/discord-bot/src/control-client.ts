@@ -13,10 +13,6 @@ const help = {
     '봇의 Control API 인증에 실패했습니다. 봇과 API 서버의 BOT_API_TOKEN이 같은지 확인해 주세요. DISCORD_BOT_TOKEN과는 다른 내부 토큰입니다.',
   ADMIN_REQUIRED:
     '관리자용 명령입니다. API 서버의 DISCORD_ADMIN_USER_IDS에 본인의 Discord 사용자 ID를 등록하고 API를 재시작해 주세요.',
-  PROJECT_ADMIN_REQUIRED:
-    '비용 조회에는 관리자 권한이 필요합니다. 저장소 admin 역할 또는 API 서버의 DISCORD_ADMIN_USER_IDS 설정을 확인해 주세요.',
-  BUDGET_EXCEEDED:
-    '저장소의 가용 예산이 부족합니다. 대시보드에서 예산 한도와 이미 예약된 금액을 확인해 주세요.',
   JOB_NOT_FOUND: '작업을 찾을 수 없습니다. 작업 생성 응답에 나온 전체 작업 ID를 입력해 주세요.',
   RESOURCE_NOT_FOUND: '대상 데이터를 찾을 수 없습니다. 작업 ID와 저장소 등록 상태를 확인해 주세요.',
   ENGINE_NOT_ALLOWED:

@@ -1,9 +1,20 @@
+-- Fresh installation only. No upgrade, archive, import or accounting schema.
+BEGIN;
+
+-- CreateSchema
+CREATE SCHEMA IF NOT EXISTS "public";
+
 -- CreateTable
 CREATE TABLE "Repository" (
     "id" TEXT NOT NULL,
     "fullName" TEXT NOT NULL,
     "installationId" TEXT NOT NULL,
+    "mergeInstallationId" TEXT,
     "enabled" BOOLEAN NOT NULL DEFAULT true,
+    "baseBranch" TEXT NOT NULL DEFAULT 'main',
+    "requiredChecks" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "allowedEngines" TEXT[] DEFAULT ARRAY['codex']::TEXT[],
+    "verifiedAt" TIMESTAMP(3),
 
     CONSTRAINT "Repository_pkey" PRIMARY KEY ("id")
 );
@@ -32,6 +43,8 @@ CREATE TABLE "Job" (
     "version" INTEGER NOT NULL DEFAULT 0,
     "attemptSequence" INTEGER NOT NULL DEFAULT 0,
     "errorCode" TEXT,
+    "baseSha" TEXT,
+    "timeoutSeconds" INTEGER NOT NULL DEFAULT 600,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -73,6 +86,7 @@ CREATE TABLE "JobEvent" (
     "eventId" TEXT NOT NULL,
     "kind" TEXT NOT NULL,
     "message" TEXT NOT NULL,
+    "sequence" SERIAL NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "JobEvent_pkey" PRIMARY KEY ("id")
@@ -85,6 +99,8 @@ CREATE TABLE "WebhookInbox" (
     "deliveryId" TEXT NOT NULL,
     "event" TEXT NOT NULL,
     "payloadHash" TEXT NOT NULL,
+    "payload" JSONB NOT NULL DEFAULT '{}',
+    "processedAt" TIMESTAMP(3),
     "receivedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "WebhookInbox_pkey" PRIMARY KEY ("id")
@@ -97,8 +113,71 @@ CREATE TABLE "TransactionOutbox" (
     "payload" JSONB NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "publishedAt" TIMESTAMP(3),
+    "attempts" INTEGER NOT NULL DEFAULT 0,
+    "nextAttemptAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "lastError" TEXT,
 
     CONSTRAINT "TransactionOutbox_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Identity" (
+    "id" TEXT NOT NULL,
+    "actorId" TEXT NOT NULL,
+    "githubId" TEXT NOT NULL,
+    "githubLogin" TEXT NOT NULL,
+    "verifiedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "Identity_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "PRLink" (
+    "id" TEXT NOT NULL,
+    "jobId" TEXT NOT NULL,
+    "number" INTEGER NOT NULL,
+    "branch" TEXT NOT NULL,
+    "url" TEXT NOT NULL,
+    "headSha" TEXT NOT NULL,
+    "baseSha" TEXT NOT NULL,
+
+    CONSTRAINT "PRLink_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "JobStep" (
+    "id" TEXT NOT NULL,
+    "jobId" TEXT NOT NULL,
+    "key" TEXT NOT NULL,
+    "inputHash" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'PENDING',
+    "result" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "JobStep_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "MergeRecord" (
+    "id" TEXT NOT NULL,
+    "jobId" TEXT NOT NULL,
+    "sha" TEXT NOT NULL,
+    "actorId" TEXT NOT NULL,
+    "headSha" TEXT NOT NULL,
+    "mergedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "MergeRecord_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "DeadLetter" (
+    "id" TEXT NOT NULL,
+    "eventId" TEXT NOT NULL,
+    "topic" TEXT NOT NULL,
+    "reason" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "DeadLetter_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -107,6 +186,7 @@ CREATE TABLE "Approval" (
     "jobId" TEXT NOT NULL,
     "headSha" TEXT NOT NULL,
     "actorId" TEXT NOT NULL,
+    "githubId" TEXT NOT NULL DEFAULT '',
     "expiresAt" TIMESTAMP(3) NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -153,6 +233,9 @@ CREATE UNIQUE INDEX "JobAttempt_jobId_leaseVersion_key" ON "JobAttempt"("jobId",
 CREATE UNIQUE INDEX "JobEvent_eventId_key" ON "JobEvent"("eventId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "JobEvent_sequence_key" ON "JobEvent"("sequence");
+
+-- CreateIndex
 CREATE INDEX "JobEvent_jobId_createdAt_idx" ON "JobEvent"("jobId", "createdAt");
 
 -- CreateIndex
@@ -160,6 +243,27 @@ CREATE UNIQUE INDEX "WebhookInbox_provider_deliveryId_key" ON "WebhookInbox"("pr
 
 -- CreateIndex
 CREATE INDEX "TransactionOutbox_publishedAt_createdAt_idx" ON "TransactionOutbox"("publishedAt", "createdAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Identity_actorId_key" ON "Identity"("actorId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Identity_githubId_key" ON "Identity"("githubId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PRLink_jobId_key" ON "PRLink"("jobId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PRLink_branch_key" ON "PRLink"("branch");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "JobStep_jobId_key_key" ON "JobStep"("jobId", "key");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "MergeRecord_jobId_key" ON "MergeRecord"("jobId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "DeadLetter_eventId_key" ON "DeadLetter"("eventId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Approval_jobId_headSha_actorId_key" ON "Approval"("jobId", "headSha", "actorId");
@@ -183,5 +287,15 @@ ALTER TABLE "JobAttempt" ADD CONSTRAINT "JobAttempt_workerId_fkey" FOREIGN KEY (
 ALTER TABLE "JobEvent" ADD CONSTRAINT "JobEvent_jobId_fkey" FOREIGN KEY ("jobId") REFERENCES "Job"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "PRLink" ADD CONSTRAINT "PRLink_jobId_fkey" FOREIGN KEY ("jobId") REFERENCES "Job"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "JobStep" ADD CONSTRAINT "JobStep_jobId_fkey" FOREIGN KEY ("jobId") REFERENCES "Job"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MergeRecord" ADD CONSTRAINT "MergeRecord_jobId_fkey" FOREIGN KEY ("jobId") REFERENCES "Job"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "Approval" ADD CONSTRAINT "Approval_jobId_fkey" FOREIGN KEY ("jobId") REFERENCES "Job"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
+COMMIT;

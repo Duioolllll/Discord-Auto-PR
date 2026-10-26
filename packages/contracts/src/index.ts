@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const Engine = z.enum(['codex', 'openhands', 'swe-agent', 'pr-agent']);
+export const Engine = z.literal('codex');
 export const Kind = z.enum(['develop', 'fix', 'refactor', 'review']);
 export const JobStatus = z.enum([
   'QUEUED',
@@ -25,7 +25,6 @@ export const CreateJob = z
     instruction: z.string().trim().min(1).max(20000),
     engine: Engine.default('codex'),
     kind: Kind.default('develop'),
-    maxCostCents: z.number().int().min(1).max(100000).default(500),
     timeoutSeconds: z.number().int().min(10).max(3600).default(600),
   })
   .strict();
@@ -37,7 +36,7 @@ export type JobStatus = z.infer<typeof JobStatus>;
 export const RegisterWorker = z
   .object({
     name: z.string().min(1).max(100),
-    engines: z.array(Engine).max(4),
+    engines: z.array(Engine).max(1),
     maxConcurrent: z.number().int().min(1).max(8).default(1),
   })
   .strict();
@@ -53,18 +52,6 @@ export const RunResult = z
     summary: z.string().max(8000),
     changedPaths: z.array(z.string().max(1000)).max(1000),
     artifacts: z.array(z.string().max(2000)).max(100),
-    usage: z
-      .array(
-        z
-          .object({
-            source: z.enum(['provider_actual', 'token_estimate', 'runtime_estimate']),
-            inputTokens: z.number().int().nonnegative().max(2147483647).optional(),
-            outputTokens: z.number().int().nonnegative().max(2147483647).optional(),
-            amountUsd: z.number().finite().nonnegative().max(2147.483647).optional(),
-          })
-          .strict(),
-      )
-      .max(100),
   })
   .strict();
 export type RunResult = z.infer<typeof RunResult>;
@@ -116,5 +103,5 @@ export interface RunSpec {
   repo: { owner: string; name: string; baseSha: string };
   workspaceId: string;
   instruction: string;
-  limits: { timeoutSeconds: number; maxCostUsd?: number; maxOutputBytes: number };
+  limits: { timeoutSeconds: number; maxOutputBytes: number };
 }

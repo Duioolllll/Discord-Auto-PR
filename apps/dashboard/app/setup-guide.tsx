@@ -96,7 +96,7 @@ export function SetupGuide() {
         <div className="setup-body">
           <p>
             개인 Linux/WSL 워커에 Codex CLI {toolchain.codex}를 설치하고 저장소 폴더에서 실행하세요.
-            기본값은 <code>HUB_CODEX_AUTH_MODE=chatgpt</code>이며 OpenAI API 키가 필요 없습니다.
+            ChatGPT 계정으로 로그인한 CLI 전용 프로필을 사용하며 모델 API 키를 설정하지 않습니다.
           </p>
           <pre>
             <code>
@@ -109,10 +109,8 @@ export function SetupGuide() {
             <code>HUB_CODEX_AUTH_DIR</code>에 절대 경로를 지정하세요.
           </p>
           <p>
-            API 과금 방식을 선택할 때만{' '}
-            <a href="https://platform.openai.com/api-keys">OpenAI API keys</a>에서 키를 만들고{' '}
-            <code>HUB_CODEX_AUTH_MODE=api-key</code>와 <code>HUB_CODEX_API_KEY_FILE</code>을
-            설정합니다. ChatGPT 모드에서는 이 키 항목을 비워 두세요.
+            작업별 실행 시간과 격리 한도를 적용합니다. 예산 입력·금액 예약·비용 정산은 없습니다. CLI
+            로그인과 워커 준비가 끝나면 바로 작업을 요청할 수 있습니다.
           </p>
         </div>
       </details>

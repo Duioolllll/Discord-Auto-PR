@@ -46,7 +46,7 @@ export interface Job {
   actorId: string;
   errorCode?: string;
   createdAt: string;
-  maxCostCents: number;
+  timeoutSeconds: number;
   repository: { fullName: string };
   pullRequest?: { url: string; number: number; headSha: string };
 }
@@ -55,7 +55,7 @@ export interface Repository {
   fullName: string;
   enabled: boolean;
   verifiedAt?: string;
-  budget?: { limitCents: number; reservedCents: number; spentCents: number };
+  baseBranch: string;
 }
 export interface Worker {
   id: string;

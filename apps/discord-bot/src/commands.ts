@@ -52,7 +52,6 @@ export const commands = [
       ),
   ),
   new SlashCommandBuilder().setName('workers').setDescription('관리자용 워커 현황'),
-  new SlashCommandBuilder().setName('cost').setDescription('관리자용 비용 분류별 현황'),
   new SlashCommandBuilder().setName('help').setDescription('처음 사용하기 · 명령어와 연결 방법'),
   new SlashCommandBuilder()
     .setName('ping')
@@ -119,14 +118,13 @@ export async function handleCommand(
   client: ControlClient,
 ) {
   const command = interaction.commandName;
-  if (![...development, ...jobCommands, 'workers', 'cost', 'help', 'ping'].includes(command))
-    return;
+  if (![...development, ...jobCommands, 'workers', 'help', 'ping'].includes(command)) return;
   await interaction.deferReply({ ephemeral: true });
   try {
     let content: string;
     if (command === 'help') {
       content =
-        '처음이라면 /ping으로 연결과 내 저장소 권한을 확인하세요.\n/develop: 기능 개발 · /refactor: 코드 수정·리팩터링\nrepository와 job은 입력창의 추천 목록에서 선택할 수 있습니다. 저장소는 GitHub 링크를 붙여 넣어도 됩니다.\n/status: 상태 · /logs: 기록 · /cancel: 취소\n/approve: 현재 커밋 승인 · /merge: 정책 확인 후 병합\n/workers · /cost: 관리자 조회\n검토만 하는 /review는 아직 없습니다.\n연결 문제: 서버 터미널에서 pnpm discord:check\n설치 안내: https://github.com/Duioolllll/Discord-Auto-PR/blob/main/docs/discord-quickstart.md';
+        '처음이라면 /ping으로 연결과 내 저장소 권한을 확인하세요.\n/develop: Codex CLI로 기능 개발 · /refactor: 코드 수정·리팩터링\nrepository와 job은 입력창의 추천 목록에서 선택할 수 있습니다. 저장소는 GitHub 링크를 붙여 넣어도 됩니다.\n/status: 상태 · /logs: 기록 · /cancel: 취소\n/approve: 현재 커밋 승인 · /merge: 정책 확인 후 병합\n/workers: 관리자 워커 조회\n검토만 하는 /review는 아직 없습니다.\n연결 문제: 서버 터미널에서 pnpm discord:check\n설치 안내: https://github.com/Duioolllll/Discord-Auto-PR/blob/main/docs/discord-quickstart.md';
     } else if (command === 'ping') {
       await client.request('/me', interaction.user.id, 'GET');
       const repositories = await client.request('/repositories', interaction.user.id, 'GET');
@@ -155,20 +153,6 @@ export async function handleCommand(
             )
             .join('\n')
         : '워커를 조회하지 못했습니다.';
-    } else if (command === 'cost') {
-      const result = await client.request('/cost', interaction.user.id, 'GET');
-      const rows = result.bySource as {
-        source: string;
-        currency: string;
-        _sum: { amountMicros: number | null };
-      }[];
-      content =
-        rows
-          .map(
-            (row) =>
-              `${row.source}: ${row.currency} ${((row._sum.amountMicros ?? 0) / 1e6).toFixed(4)}`,
-          )
-          .join('\n') || '기록된 비용 관측치가 없습니다.';
     } else {
       const jobId = encodeURIComponent(interaction.options.getString('job', true));
       const mutation = ['cancel', 'approve', 'merge'].includes(command);

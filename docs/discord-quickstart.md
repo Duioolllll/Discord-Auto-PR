@@ -90,7 +90,7 @@ pnpm dev:bot
 | `/develop`, `/refactor`       | 저장소 추천 목록에서 선택하고 작업 내용을 입력. 코드 변경·PR을 만들 수 있음 |
 | `/status`, `/logs`, `/cancel` | 최근 작업을 추천 목록에서 선택. 전체 UUID 직접 입력도 가능                  |
 | `/approve`, `/merge`          | 사람 리뷰·권한·GitHub 정책을 확인하는 별도 승인/병합 단계                   |
-| `/workers`, `/cost`           | 관리자 조회                                                                 |
+| `/workers`                    | 관리자 워커 조회                                                            |
 
 읽기 전용 `/review`는 아직 없습니다. `/refacter`가 아니라 `/refactor`입니다.
 추천 목록은 해당 Discord 사용자에게 API가 허용한 데이터만 보여 줍니다. 목록이 비어 있으면 `/ping`으로 확인하세요.
@@ -129,7 +129,7 @@ pnpm discord:check
 ## `/ping`은 되지만 저장소가 0개라면
 
 Discord 연결은 된 상태입니다. 다음은 운영자의 저장소 등록과 사용자 역할 설정입니다.
-[설치 가이드 7단계](getting-started.md#7-작업할-저장소와-예산-등록)에서 **실제 개발 App installation ID**로 저장소·예산을 등록하고,
+[설치 가이드 7단계](getting-started.md#7-작업할-저장소-등록)에서 **실제 개발 App installation ID**로 저장소를 등록하고,
 [8단계](getting-started.md#8-discord-봇-연결)의 `SEED_DISCORD_USER_ID`로 작업을 요청할 사용자에게 해당 저장소의 developer 역할을 부여하세요.
 `DISCORD_CHECK_USER_ID`는 진단용일 뿐 역할 설정을 대신하지 않습니다. 일반 사용자에게 전역 관리자 권한을 줄 필요는 없습니다.
 
@@ -142,5 +142,5 @@ Discord 연결은 된 상태입니다. 다음은 운영자의 저장소 등록�
 `discord:setup`의 숨김 입력·서버 재선택·설정 저장·명령 등록, 재실행, 읽기 전용 `discord:check`,
 기존 등록 명령, `dev:bot`의 시작·서버 범위 확인·`/help` 처리·종료를 검증합니다.
 Discord REST SDK는 모의 HTTP 서버에 연결하며 외부 네트워크를 차단합니다. Gateway 이벤트는 테스트용 클라이언트가 제공합니다.
-별도 테스트는 11개 slash 명령을 실제 Control API·PostgreSQL·Redis에 연결해 검증하며 GitHub 작업에는 FakeGitHub를 사용합니다.
+별도 테스트는 10개 slash 명령을 실제 Control API·PostgreSQL·Redis에 연결해 검증하며 GitHub 작업에는 FakeGitHub를 사용합니다.
 실제 Discord 계정의 초대·채널 권한·Gateway 접속은 운영자의 `/help`·`/ping` 확인이 필요합니다.

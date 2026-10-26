@@ -2,11 +2,10 @@ import { formatTime } from '../lib/time';
 import Link from 'next/link';
 import { randomUUID } from 'node:crypto';
 import { api, sessionToken, type Job, type Repository, type Worker } from '../lib/api';
-import { login, logout, createJob, configureBudget } from './actions';
+import { login, logout, createJob } from './actions';
 import { Refresh } from './refresh';
 import { SetupGuide } from './setup-guide';
 export const dynamic = 'force-dynamic';
-const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 export default async function Page({
   searchParams,
 }: {
@@ -21,7 +20,7 @@ export default async function Page({
             ◈ <b>PR HUB</b>
           </div>
           <h1>Control room</h1>
-          <p>개발 작업, 워커, 승인과 비용을 한 곳에서 확인합니다.</p>
+          <p>Codex CLI 작업, 워커와 PR 승인을 한 곳에서 확인합니다.</p>
           <form action={login}>
             <label htmlFor="token">Control API access token</label>
             <input
@@ -51,14 +50,10 @@ export default async function Page({
     api<Job[]>('/jobs'),
     api<Repository[]>('/repositories'),
     api<Worker[]>('/workers'),
-    api<{
-      bySource: { source: string; currency: string; _sum: { amountMicros: number | null } }[];
-    }>('/cost'),
   ]);
   const jobs = results[0].status === 'fulfilled' ? results[0].value : [];
   const repos = results[1].status === 'fulfilled' ? results[1].value : [];
   const workers = results[2].status === 'fulfilled' ? results[2].value : [];
-  const costs = results[3].status === 'fulfilled' ? results[3].value.bySource : [];
   return (
     <div className="shell">
       <aside>
@@ -76,7 +71,6 @@ export default async function Page({
           <a href="#request">＋ &nbsp; New request</a>
           <a href="#workers">▦ &nbsp; Workers</a>
           <a href="#repositories">⌘ &nbsp; Repositories</a>
-          <a href="#cost">＄ &nbsp; Cost & budget</a>
           <a href="#setup">⚙ &nbsp; 키 발급·설정</a>
         </nav>
         <div className="aside-bottom">
@@ -93,7 +87,7 @@ export default async function Page({
             <h1>
               Control room<span className="dot">.</span>
             </h1>
-            <p>요청에서 PR까지, 모든 작업의 현재 상태.</p>
+            <p>로그인한 Codex CLI가 요청을 실행하고 검증된 변경으로 PR을 만듭니다.</p>
           </div>
           <Refresh />
         </header>
@@ -168,7 +162,7 @@ export default async function Page({
             {!jobs.length && (
               <div className="empty">
                 <b>아직 작업이 없습니다</b>
-                <p>저장소와 예산을 등록한 다음 첫 개발 요청을 만들어 보세요.</p>
+                <p>저장소를 등록하고 CLI 워커를 연결한 다음 첫 개발 요청을 만들어 보세요.</p>
               </div>
             )}
           </div>
@@ -177,7 +171,7 @@ export default async function Page({
           <section id="request">
             <div className="section-title">
               <h2>Create a request</h2>
-              <span>Codex</span>
+              <span>Codex CLI</span>
             </div>
             <form className="request-form" action={createJob}>
               <input type="hidden" name="requestId" value={`dashboard:${randomUUID()}`} />
@@ -199,14 +193,15 @@ export default async function Page({
                 maxLength={20000}
                 placeholder="무엇을 구현하거나 수정할까요?"
               />
-              <label htmlFor="budget">작업 예산 예약 (USD cents)</label>
+              <label htmlFor="timeout">CLI 실행 제한 (초)</label>
               <input
-                id="budget"
-                name="maxCostCents"
+                id="timeout"
+                name="timeoutSeconds"
                 type="number"
-                min={1}
-                max={100000}
-                defaultValue={500}
+                min={10}
+                max={3600}
+                defaultValue={600}
+                required
               />
               <button disabled={!repos.length}>작업 생성 →</button>
             </form>
@@ -238,7 +233,7 @@ export default async function Page({
         </div>
         <section id="repositories">
           <div className="section-title">
-            <h2>Repositories & reservations</h2>
+            <h2>Repositories</h2>
             <span>{repos.length} repositories</span>
           </div>
           <div className="table-wrap">
@@ -246,9 +241,8 @@ export default async function Page({
               <thead>
                 <tr>
                   <th>REPOSITORY</th>
-                  <th>LIMIT</th>
-                  <th>RESERVED</th>
-                  <th>ACTUAL SPEND</th>
+                  <th>BASE BRANCH</th>
+                  <th>STATUS</th>
                   <th>VERIFICATION</th>
                 </tr>
               </thead>
@@ -256,46 +250,13 @@ export default async function Page({
                 {repos.map((repo) => (
                   <tr key={repo.id}>
                     <td>{repo.fullName}</td>
-                    <td>
-                      <form className="budget-form" action={configureBudget}>
-                        <input type="hidden" name="repositoryId" value={repo.id} />
-                        <input
-                          aria-label={`${repo.fullName} budget cents`}
-                          name="limitCents"
-                          type="number"
-                          min={0}
-                          max={100000000}
-                          defaultValue={repo.budget?.limitCents ?? 0}
-                        />
-                        <button className="quiet">설정</button>
-                      </form>
-                    </td>
-                    <td>{usd(repo.budget?.reservedCents ?? 0)}</td>
-                    <td>{usd(repo.budget?.spentCents ?? 0)}</td>
+                    <td>{repo.baseBranch}</td>
+                    <td>{repo.enabled ? 'ENABLED' : 'DISABLED'}</td>
                     <td>{repo.verifiedAt ? 'GitHub verified' : 'Pending verification'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
-        </section>
-        <section id="cost">
-          <div className="section-title">
-            <h2>Cost observations</h2>
-            <span>분류별 별도 집계</span>
-          </div>
-          <div className="metrics">
-            {['provider_actual', 'token_estimate', 'runtime_estimate'].map((source) => (
-              <div className="metric" key={source}>
-                <span>{source.replaceAll('_', ' ')}</span>
-                <strong>
-                  {costs.some((c) => c.source === source)
-                    ? `$${((costs.find((c) => c.source === source)?._sum.amountMicros ?? 0) / 1e6).toFixed(4)}`
-                    : '—'}
-                </strong>
-                <small>예약 금액과 관측 비용은 별도입니다.</small>
-              </div>
-            ))}
           </div>
         </section>
         <SetupGuide />

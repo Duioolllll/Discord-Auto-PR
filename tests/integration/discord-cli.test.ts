@@ -17,7 +17,7 @@ it('runs the actual pnpm setup, check, registration and bot commands through a t
     await setup.reply('권한을 확인할 본인 Discord 사용자 ID', 'not-a-user-id');
     await setup.reply('권한을 확인할 본인 Discord 사용자 ID', cliIds.user);
     expect(await setup.finish()).toBe(0);
-    expect(setup.output()).toContain('서버 명령 11개 등록 확인');
+    expect(setup.output()).toContain('서버 명령 10개 등록 확인');
     expect(setup.output()).not.toContain(cliFakeToken);
     const envText = await fixture.readEnvironment();
     const env = parseEnv(envText);
@@ -44,7 +44,7 @@ it('runs the actual pnpm setup, check, registration and bot commands through a t
       expect.arrayContaining(['unmanaged', ...commands.map((command) => command.name)]),
     );
     const writes = fixture.state.calls.filter((call) => call.method === 'POST').length;
-    expect(writes).toBe(11);
+    expect(writes).toBe(10);
 
     const resumed = fixture.run('discord:setup', true);
     await resumed.reply('기존 봇 토큰을 사용할까요?');
@@ -56,7 +56,7 @@ it('runs the actual pnpm setup, check, registration and bot commands through a t
 
     const check = fixture.run('discord:check');
     expect(await check.finish()).toBe(0);
-    expect(check.output()).toContain('서버 명령 11개 등록 확인');
+    expect(check.output()).toContain('서버 명령 10개 등록 확인');
     expect(check.output()).not.toContain(cliFakeToken);
     expect(await fixture.readEnvironment()).toBe(envText);
     expect(fixture.state.calls.filter((call) => call.method === 'POST')).toHaveLength(writes);
@@ -161,7 +161,7 @@ it('distinguishes verified Discord setup from an API that is not ready and clear
     await setup.reply('서버 번호 또는 서버 ID', '1');
     await setup.reply('권한을 확인할 본인 Discord 사용자 ID');
     expect(await setup.finish(), setup.output()).toBe(0);
-    expect(setup.output()).toContain('서버 명령 11개 등록 확인');
+    expect(setup.output()).toContain('서버 명령 10개 등록 확인');
     expect(setup.output()).toContain('API는 준비 대기 중');
     expect(parseEnv(await fixture.readEnvironment()).DISCORD_CHECK_USER_ID).toBe('');
     const check = fixture.run('discord:check');

@@ -5,11 +5,9 @@ import {
   codexAuthDirectory,
   lockCodexProfile,
   validateCodexAuthDirectory,
-  type CodexAuthentication,
 } from '@hub/agent-codex';
 import { supervise } from './supervisor.js';
 import { resolve } from 'node:path';
-import { readFileSync } from 'node:fs';
 
 const { CONTROL_API_URL, WORKER_ENROLLMENT_TOKEN } = process.env;
 if (!CONTROL_API_URL || !WORKER_ENROLLMENT_TOKEN)
@@ -17,25 +15,15 @@ if (!CONTROL_API_URL || !WORKER_ENROLLMENT_TOKEN)
 if (!process.argv.includes('--probe')) {
   const root = resolve(process.env.WORKER_ROOT ?? '.local/jobs');
   const { HUB_CODEX_IMAGE, HUB_RUNNER_NETWORK } = process.env;
-  const authMode = process.env.HUB_CODEX_AUTH_MODE || 'chatgpt';
-  if (!['chatgpt', 'api-key'].includes(authMode))
-    throw new Error('HUB_CODEX_AUTH_MODE must be chatgpt or api-key');
-  let auth: CodexAuthentication;
-  if (authMode === 'api-key') {
-    const key = process.env.HUB_CODEX_API_KEY_FILE
-      ? readFileSync(process.env.HUB_CODEX_API_KEY_FILE, 'utf8').trim()
-      : process.env.HUB_CODEX_API_KEY;
-    if (!key) throw new Error('API-key mode requires HUB_CODEX_API_KEY or HUB_CODEX_API_KEY_FILE');
-    auth = { mode: 'api-key', apiKey: key };
-  } else {
-    const directory = codexAuthDirectory(process.env.HUB_CODEX_AUTH_DIR);
-    try {
-      auth = { mode: 'chatgpt', directory: await validateCodexAuthDirectory(directory) };
-    } catch {
-      throw new Error(
-        'Codex CLI ChatGPT login required. Run pnpm codex:login on the worker and use a private HUB_CODEX_AUTH_DIR.',
-      );
-    }
+  let directory: string;
+  try {
+    directory = await validateCodexAuthDirectory(
+      codexAuthDirectory(process.env.HUB_CODEX_AUTH_DIR),
+    );
+  } catch {
+    throw new Error(
+      'Codex CLI ChatGPT login required. Run pnpm codex:login on the worker and use a private HUB_CODEX_AUTH_DIR.',
+    );
   }
   const testCommand = JSON.parse(process.env.WORKER_TEST_COMMAND ?? 'null') as unknown;
   if (
@@ -52,7 +40,7 @@ if (!process.argv.includes('--probe')) {
     throw new Error('HUB_CODEX_IMAGE and an approved HUB_RUNNER_NETWORK are required');
   const stop = new AbortController();
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => stop.abort());
-  const release = auth.mode === 'chatgpt' ? await lockCodexProfile(auth.directory) : undefined;
+  const release = await lockCodexProfile(directory);
   try {
     await supervise({
       baseUrl: CONTROL_API_URL,
@@ -60,7 +48,7 @@ if (!process.argv.includes('--probe')) {
       root,
       adapter: new CodexAdapter({
         image: HUB_CODEX_IMAGE,
-        auth,
+        auth: { directory },
         network: HUB_RUNNER_NETWORK,
         workspaceRoot: root,
       }),
@@ -83,7 +71,7 @@ if (!process.argv.includes('--probe')) {
       },
     });
   } finally {
-    await release?.();
+    await release();
   }
 } else {
   const enrollment = new WorkerClient(CONTROL_API_URL, WORKER_ENROLLMENT_TOKEN);

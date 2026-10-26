@@ -1,5 +1,5 @@
 {
-  "name": "discord-ai-pr-hub",
+  "name": "discord-cli-pr-hub",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@12.15.0",
@@ -23,7 +23,7 @@
     "infra:up": "docker compose -f infra/compose.dev.yml up -d --wait",
     "infra:stop": "docker compose -f infra/compose.dev.yml stop",
     "db:generate": "pnpm --filter @hub/db generate",
-    "db:migrate": "node --env-file-if-exists=.env --import tsx scripts/migrate.ts",
+    "db:init": "node --env-file-if-exists=.env --conditions=development --import tsx scripts/init-database.ts",
     "db:seed": "node --env-file-if-exists=.env --conditions=development --import tsx scripts/seed.ts",
     "setup:local": "node scripts/local-env.mjs",
     "config:check": "node --import tsx scripts/check-config.ts",

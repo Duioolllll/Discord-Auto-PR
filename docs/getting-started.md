@@ -163,7 +163,7 @@ pnpm setup:local
 pnpm config:check
 pnpm infra:up
 pnpm db:generate
-pnpm db:migrate
+pnpm db:init
 pnpm build
 ```
 
@@ -175,7 +175,7 @@ pnpm build
 | `config:check` | 내부 설정의 형식·혼용 검사     | `[수정 필요]` 없음. DB·Redis 접속은 다음 단계에서 확인 |
 | `infra:up`     | PostgreSQL·Redis 컨테이너 시작 | 두 서비스가 healthy 상태                               |
 | `db:generate`  | Prisma DB 클라이언트 생성      | 클라이언트 생성 완료                                   |
-| `db:migrate`   | DB 테이블 준비                 | migration 적용 완료 또는 적용할 migration 없음         |
+| `db:init`      | DB 테이블 준비                 | CLI 초기 스키마 준비 완료 또는 이미 초기화됨           |
 | `build`        | 앱·패키지 빌드                 | 작업들이 성공하고 명령 종료                            |
 
 상태를 다시 보려면:
@@ -313,7 +313,7 @@ GITHUB_MUTATIONS_ENABLED=false
 파일 방식이 필요하면 같은 secret을 비공개 파일에 저장하고 `GITHUB_WEBHOOK_SECRET_FILE`에 절대 경로를 지정하세요.
 파일 설정이 있으면 `.env`의 인라인 값보다 우선합니다. 병합 App 웹훅은 사용하지 않습니다.
 
-## 7. 작업할 저장소와 예산 등록
+## 7. 작업할 저장소 등록
 
 이 프로젝트를 clone했다고 작업 대상 저장소가 자동 등록되지는 않습니다.
 별도 터미널에서 **실제 값으로 바꿔** 아래 명령을 실행합니다.
@@ -323,19 +323,16 @@ GITHUB_MUTATIONS_ENABLED=false
 SEED_REPOSITORY=본인GitHub아이디/작업할저장소 \
   SEED_INSTALLATION_ID=개발_App_설치_ID \
   SEED_MERGE_INSTALLATION_ID=병합_App_설치_ID \
-  SEED_BUDGET_CENTS=1000 \
   pnpm db:seed
 ```
 
 등록할 저장소에는 `main` 브랜치와 최소 한 개의 커밋이 있어야 합니다. 기본 대상 브랜치는 `main`입니다.
 다른 기본 브랜치를 사용하는 저장소는 운영자가 DB의 `Repository.baseBranch`를 맞춰야 합니다. 현재 UI에는 변경 화면이 없습니다.
 
-대시보드를 새로고침해 **Repositories & reservations**와 작업 요청의 저장소 목록에 나타나는지 확인합니다.
+대시보드를 새로고침해 **Repositories**와 작업 요청의 저장소 목록에 나타나는지 확인합니다.
 처음에는 `Pending verification`일 수 있습니다. 실제 워커가 GitHub App 설치 범위로 snapshot을 읽을 때 원격 검증합니다.
 
-`1000 cents`는 **10 USD의 앱 내부 예산 한도**입니다. 결제·충전 명령이 아닙니다.
-기본 작업 한 건은 `500 cents`를 예약합니다. 예산이 부족하면 작업 생성이 거절됩니다.
-ChatGPT 사용 한도와 이 앱의 예산 예약은 별도입니다.
+예산 등록은 필요 없습니다. 작업은 ChatGPT로 로그인한 Codex CLI가 실행하며, 실행 시간·출력·컨테이너 자원 한도를 적용합니다.
 
 ## 8. Discord 봇 연결
 
@@ -393,7 +390,7 @@ SEED_REPOSITORY=본인GitHub아이디/작업할저장소 \
 ```
 
 이 명령은 해당 Discord 사용자에 저장소의 developer 역할을 부여합니다. 일반 요청자에게 전역 관리자 권한을 줄 필요는 없습니다.
-기존 등록을 갱신하는 명령이며, 위처럼 예산을 생략하면 기존 예산은 유지됩니다.
+기존 등록을 갱신하는 명령입니다. 승인자의 reviewer 역할과 별도로 작업 요청자의 developer 역할을 관리하세요.
 
 봇 시작 시 명령을 자동 등록합니다. 별도 등록만 실행하고 종료하려는 운영자는 다음 호환 명령을 사용할 수 있습니다.
 
@@ -442,14 +439,7 @@ pnpm codex:status
 출력에 `ChatGPT login detected`가 있으면 전용 프로필의 로그인 정보를 확인한 것입니다.
 이것만으로 실제 모델 호출 성공이나 사용 가능량까지 확인한 것은 아닙니다.
 
-`.env`에 다음 모드를 지정합니다. 생략해도 기본값은 같습니다.
-
-```dotenv
-HUB_CODEX_AUTH_MODE=chatgpt
-```
-
-`HUB_CODEX_API_KEY`와 `HUB_CODEX_API_KEY_FILE`은 필요 없습니다.
-기존 클라우드 환경 설정에 API 키 필수 항목이 남아 있다면 ChatGPT 모드에서는 제거하세요.
+워커는 전용 CLI 프로필로 ChatGPT에 로그인합니다. 모델 API 키나 인증 모드를 지정하지 않습니다.
 로그인은 기본 `.local/codex-auth`에 저장되며 Git이나 공유 환경 스냅샷에 포함하면 안 됩니다.
 
 ### 실행 이미지 빌드·호스트 검사
@@ -637,7 +627,7 @@ git status
 git pull --ff-only
 pnpm install --frozen-lockfile
 pnpm db:generate
-pnpm db:migrate
+pnpm db:init
 pnpm build
 ```
 
@@ -657,7 +647,6 @@ pnpm build
 | `INVALID_REQUEST`              | `instruction`은 공백이 아닌 1~20,000자, `job`은 전체 UUID인지 확인                                                                |
 | `REPOSITORY_NOT_INSTALLED`     | 7단계에서 해당 저장소와 **실제 개발 App installation ID**를 등록했는지, 저장소가 활성화되어 있는지 확인                           |
 | `FORBIDDEN`                    | 8단계의 `SEED_DISCORD_USER_ID`가 명령을 실행한 본인 ID인지 확인. 일반 작업 요청에는 해당 저장소의 developer/admin 역할이 필요     |
-| `BUDGET_EXCEEDED`              | 가용 예산과 예약액 확인. 기본 새 작업 예약액은 500센트이며 이미 예약한 작업도 한도에 포함됨                                       |
 | `UNAUTHORIZED`                 | API와 봇의 `BOT_API_TOKEN`이 일치하는지 확인하고 변경한 서비스를 재시작. Discord Developer Portal의 봇 토큰과는 다른 값           |
 | `CONTROL_API_UNREACHABLE`      | API가 실행 중인지, `CONTROL_API_URL`의 주소·포트가 맞는지 확인. 봇이 다른 PC에 있다면 `localhost`는 API 서버가 아님               |
 | `CONTROL_API_INVALID_RESPONSE` | `CONTROL_API_URL`이 대시보드 3000이 아닌 API 기본 3001을 가리키는지 확인                                                          |
@@ -677,12 +666,11 @@ pnpm build
 | Node 버전이 다름                                 | `node --version`, `command -v node` 확인. 새 터미널에도 PATH가 적용되어야 함                   |
 | Docker daemon 연결 불가                          | Docker Desktop/Engine 실행, WSL Integration 설정 확인                                          |
 | Docker permission denied                         | Ubuntu Docker 그룹 변경 후 다시 로그인. 워커를 sudo로 우회 실행하지 않음                       |
-| 3000·3001·5432·6379 포트 사용 중                 | 같은 프로젝트나 로컬 DB가 이미 실행 중인지 확인. 알 수 없는 프로세스를 종료하지 말고 먼저 식별 |
+| 3000·3001·5433·6380 포트 사용 중                 | 같은 프로젝트나 로컬 DB가 이미 실행 중인지 확인. 알 수 없는 프로세스를 종료하지 말고 먼저 식별 |
 | `.env`가 안 보임                                 | 숨김 파일임. 저장소 루트에서 `nano .env`로 열기                                                |
 | API가 `Invalid API configuration`으로 종료       | 내부 토큰이 비어 있거나 32자 미만인지 확인. 역할별 토큰은 서로 달라야 함                       |
 | 대시보드 로그인 실패                             | API `/readyz` 응답, `.env`의 `ADMIN_API_TOKEN`, 대시보드 재시작 확인                           |
 | 저장소 선택 목록이 비어 있음                     | 7단계 seed, 실제 App 설치, DB migration 확인                                                   |
-| `BUDGET_EXCEEDED`                                | 저장소 예산에서 이미 예약한 금액과 새 작업 예약액 확인. 임의로 예약 기록을 지우지 않음         |
 | `REPOSITORY_NOT_INSTALLED`                       | `owner/repository` 등록과 실제 installation ID 확인                                            |
 | `FORBIDDEN`·`REVIEWER_ROLE_REQUIRED`             | Discord 사용자 ID와 저장소별 developer/reviewer/admin 역할 확인                                |
 | GitHub 401·403·404                               | App ID·PEM 쌍, 설치 대상 저장소, App 권한, GitHub 정책 확인                                    |

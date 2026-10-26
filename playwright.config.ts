@@ -6,10 +6,10 @@ if (existsSync('.env')) process.loadEnvFile('.env');
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (
   !databaseUrl ||
-  new URL(databaseUrl).pathname !== '/hub_test' ||
+  new URL(databaseUrl).pathname !== '/hub_cli_test' ||
   !['localhost', '127.0.0.1'].includes(new URL(databaseUrl).hostname)
 )
-  throw new Error('Browser tests require the dedicated loopback hub_test database');
+  throw new Error('Browser tests require the dedicated loopback hub_cli_test database');
 const packaged = process.env.HUB_PACKAGED_CHROMIUM === 'true';
 export default defineConfig({
   globalSetup: './tests/e2e/global-setup.ts',

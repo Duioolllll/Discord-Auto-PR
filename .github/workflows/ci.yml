@@ -1,4 +1,4 @@
-name: Foundation CI
+name: CLI Build CI
 on:
   push:
   pull_request:
@@ -15,14 +15,14 @@ jobs:
         env:
           POSTGRES_USER: hub
           POSTGRES_PASSWORD: hub_local_only
-          POSTGRES_DB: hub
-        ports: ['5432:5432']
+          POSTGRES_DB: hub_cli
+        ports: ['5433:5432']
         options: >-
-          --health-cmd "pg_isready -U hub -d hub"
+          --health-cmd "pg_isready -U hub -d hub_cli"
           --health-interval 5s --health-timeout 5s --health-retries 20
       redis:
         image: redis:7.4.5-alpine@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
-        ports: ['6379:6379']
+        ports: ['6380:6379']
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 5s --health-retries 20
@@ -36,7 +36,7 @@ jobs:
       - run: pnpm toolchain:check
       - run: pnpm setup:local
       - run: pnpm db:generate
-      - run: pnpm db:migrate
+      - run: pnpm db:init
       - run: pnpm runner:build
       - run: pnpm security:check
       - name: Load the audited Codex AppArmor profile

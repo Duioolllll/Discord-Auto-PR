@@ -547,21 +547,6 @@ footer {
   }
 }
 
-.budget-form {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.budget-form input {
-  width: 110px;
-  margin: 0;
-  padding: 6px;
-}
-.budget-form button {
-  padding: 6px 10px;
-  font-size: 10px;
-}
-
 .mobile-logout {
   display: none;
 }

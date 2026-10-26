@@ -1,6 +1,6 @@
 # 연동 설정: 키·ID·파일 경로를 어디에 넣나요?
 
-대시보드를 여는 데 GitHub·Discord·OpenAI 키가 전부 필요한 것은 아닙니다. **사용할 단계의 설정만** 준비하세요. 설치 명령은 [처음 실행하기](getting-started.md), 값의 종류·발급 위치·사용처는 이 문서에서 확인합니다.
+모델 실행은 Codex CLI 로그인으로 연결합니다. GitHub·Discord 키는 각 서비스 연동에 사용합니다. **사용할 단계의 설정만** 준비하세요. 설치 명령은 [처음 실행하기](getting-started.md), 값의 종류·발급 위치·사용처는 이 문서에서 확인합니다.
 
 모든 `pnpm` 명령은 저장소 루트에서 실행합니다. 기존 `.env`의 해당 줄을 수정하고 같은 이름을 중복 추가하지 마세요. `.env.example`을 기존 `.env`에 덮어쓰면 내부 토큰을 잃을 수 있습니다.
 
@@ -31,12 +31,11 @@ Discord `/help`만 사용할 때는 `CONTROL_API_URL`과 `BOT_API_TOKEN`을 모�
 | `SEED_INSTALLATION_ID`        | App을 특정 계정에 설치한 **설치 ID**                 | 대상 저장소를 `db:seed`로 DB에 등록                                           |
 | GitHub App PEM                | App 전용 **RSA 비밀키 파일**                         | 저장소 읽기·PR 생성·병합 인증                                                 |
 | GitHub 사용자 토큰            | **본인 계정**임을 확인하는 임시 토큰                 | [요청자·승인자의 GitHub 계정 연결](approval-setup.md#3-실제-github-계정-연결) |
-| ChatGPT Codex 로그인          | `codex:login`으로 만드는 전용 **로그인 폴더**        | 기본 `chatgpt` 모드 워커                                                      |
-| `HUB_CODEX_API_KEY` / `_FILE` | OpenAI **API 과금 키** / 그 파일 경로                | 명시적으로 `api-key` 모드를 고를 때만                                         |
+| ChatGPT Codex 로그인          | `codex:login`으로 만드는 전용 **로그인 폴더**        | ChatGPT 로그인 CLI 워커                                                       |
 | `HUB_RUNNER_NETWORK`          | `hub-egress-*` 형태의 **Docker 네트워크 이름**       | 이 프로젝트의 Codex 컨테이너 접속 경로                                        |
 | Reason Network                | Reason의 **에이전트 간 연결 서비스**                 | 이 프로젝트의 Docker 네트워크와 별도 연동                                     |
 
-`REASON_API_KEY`는 `BOT_API_TOKEN`, `HUB_CODEX_API_KEY`, GitHub PEM을 대신하지 않습니다. Reason 로그인·네트워크 가입을 완료해도 이 프로젝트의 워커 네트워크·GitHub App 설정이 자동 완료되지는 않습니다.
+`REASON_API_KEY`는 `BOT_API_TOKEN`이나 GitHub PEM을 대신하지 않습니다. 모델은 전용 프로필로 로그인한 Codex CLI가 실행합니다. Reason 로그인·네트워크 가입은 이 프로젝트의 CLI 로그인·Docker 네트워크·GitHub App 설정과 별도입니다.
 
 ## 3. 자동 생성되는 내부 값
 
@@ -135,30 +134,28 @@ SEED_REPOSITORY=소유자/대상저장소 \
 SEED_INSTALLATION_ID=개발_App의_installation_ID \
 SEED_MERGE_INSTALLATION_ID=병합_App의_installation_ID \
 SEED_DISCORD_USER_ID=작업을_요청할_Discord_사용자_ID \
-SEED_BUDGET_CENTS=1000 \
 pnpm db:seed
 ```
 
-`1000 cents`는 내부 예산 10 USD이며 결제·충전이 아닙니다. `SEED_DISCORD_USER_ID`는 해당 저장소 역할을 developer로 설정하므로 기존 reviewer에 재실행하면 역할이 바뀝니다. 승인자는 [별도 승인 절차](approval-setup.md)를 사용합니다.
+`SEED_DISCORD_USER_ID`는 해당 저장소 역할을 developer로 설정하므로 기존 reviewer에 재실행하면 역할이 바뀝니다. 승인자는 [별도 승인 절차](approval-setup.md)를 사용합니다. 예산 설정은 필요 없습니다.
 
 웹훅은 API가 읽는 **유효한 secret 하나**를 개발 App의 Webhook secret과 맞춥니다. `_FILE`이 설정돼 있으면 그 파일 내용이 기준입니다. 공개 HTTPS URL·이벤트 선택은 [웹훅 연결 안내](getting-started.md#웹훅을-연결할-때)를 따르세요. 첫 ping 성공은 저장소 권한이나 PR 생성 성공을 의미하지 않습니다.
 
 실제 쓰기를 준비한 뒤에만 `GITHUB_MUTATIONS_ENABLED=true`로 바꾸고 API를 재시작합니다. App 설치만으로 사람 계정 연결이 완료되지는 않습니다. 승인·병합은 [계정 연결·역할·사람 리뷰](approval-setup.md)가 추가로 필요합니다.
 
-## 6. Codex 워커 — 기본은 ChatGPT 로그인
+## 6. Codex CLI 워커 — ChatGPT 로그인
 
 실제 코드를 실행할 **워커 컴퓨터**에서 `pnpm codex:login` → `pnpm codex:status`를 실행합니다.
 
 | 항목                  | 넣는 값                                                      | 확인 방법                                              |
 | --------------------- | ------------------------------------------------------------ | ------------------------------------------------------ |
-| `HUB_CODEX_AUTH_MODE` | 기본 `chatgpt`                                               | ChatGPT 계정 로그인                                    |
 | `HUB_CODEX_AUTH_DIR`  | 선택: 전용 **로그인 폴더**의 절대 경로                       | 기본 `.local/codex-auth`; 폴더 0700, auth.json 0600    |
 | `HUB_CODEX_CLI`       | 선택: 호스트의 Codex **실행 파일** 경로                      | `codex --version`; [도구 설치](toolchain.md)           |
 | `HUB_CODEX_IMAGE`     | `sha256:`와 64자리 값으로 된 **이미지 ID 전체**              | `runner:build` 후 `docker image inspect`               |
 | `HUB_RUNNER_NETWORK`  | 목적지 제한을 구성한 `hub-egress-*` **Docker 네트워크 이름** | 이름·존재와 방화벽/egress 검증이 모두 필요             |
 | `WORKER_TEST_COMMAND` | **JSON argv 배열**                                           | 예: `.env`에 `WORKER_TEST_COMMAND='["node","--test"]'` |
 
-ChatGPT 로그인에서는 `HUB_CODEX_API_KEY`와 `_FILE`을 비워 둡니다. OpenAI API 과금을 선택할 때만 `HUB_CODEX_AUTH_MODE=api-key`와 OpenAI 키를 설정합니다. 파일을 쓰면 `HUB_CODEX_API_KEY_FILE`에 경로를 넣습니다. ChatGPT 로그인 코드·Reason API 키·GitHub 키는 이 항목에서 사용할 수 없습니다.
+모델 API 키나 인증 모드 설정 없이 전용 CLI 프로필에 로그인합니다. 새 DB·초기 스키마·실행 순서는 [CLI 빌드 안내](cli-execution.md)를 따릅니다.
 
 ```bash
 pnpm runner:build
@@ -180,7 +177,6 @@ pnpm runner:check
 | `GITHUB_APP_PRIVATE_KEY_FILE`       | `GITHUB_APP_PRIVATE_KEY`                     |
 | `GITHUB_MERGE_APP_PRIVATE_KEY_FILE` | `GITHUB_MERGE_APP_PRIVATE_KEY`               |
 | `GITHUB_WEBHOOK_SECRET_FILE`        | `GITHUB_WEBHOOK_SECRET`                      |
-| `HUB_CODEX_API_KEY_FILE`            | `HUB_CODEX_API_KEY` — **api-key 모드에서만** |
 
 지정한 경로의 파일이 실제로 없으면 오류입니다. 파일을 준비하거나 그 설정을 제거해야 합니다.
 

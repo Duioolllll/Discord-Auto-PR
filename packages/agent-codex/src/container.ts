@@ -39,7 +39,6 @@ export interface SandboxOptions {
   network?: string;
   timeoutSeconds: number;
   maxOutputBytes: number;
-  env?: Record<string, string>;
   codexAuthDirectory?: string;
   // Omit for ordinary verification containers, which retain Docker's default seccomp.
   seccompProfilePath?: string;
@@ -111,8 +110,8 @@ export function sandboxArguments(name: string, options: SandboxOptions, command:
     throw new Error('Invalid runner limits');
   const workspace = resolve(options.workspace);
   if (/[\n\r,\0]/.test(workspace)) throw new Error('Invalid workspace path');
-  if (Object.keys(options.env ?? {}).some((key) => key !== 'CODEX_API_KEY'))
-    throw new Error('Only explicit Codex API authentication can be passed to the container');
+  if ('env' in options)
+    throw new Error('Custom container environment is not supported; use a Codex CLI login profile');
   if (options.seccompProfilePath && !isAbsolute(options.seccompProfilePath))
     throw new RunnerFailure('SECCOMP_POLICY_INVALID', 'ABSOLUTE_PROFILE_PATH_REQUIRED');
   if (
@@ -166,14 +165,13 @@ export function sandboxArguments(name: string, options: SandboxOptions, command:
     ...(options.codexAuthDirectory
       ? ['--mount', `type=bind,source=${options.codexAuthDirectory},target=/home/runner/.codex`]
       : []),
-    ...Object.keys(options.env ?? {}).flatMap((key) => ['--env', key]),
     options.image,
     ...command,
   ];
 }
 
 async function inspectContainer(name: string, options: SandboxOptions) {
-  // Never inspect Config.Env: the explicit API key, when used, is stored there by Docker.
+  // Never inspect Config.Env or expose credential material in diagnostics.
   const result = await exec(
     'docker',
     [
@@ -319,7 +317,6 @@ export async function runSandbox(
     attemptedCreate = true;
     try {
       await exec('docker', args, {
-        env: { ...process.env, ...options.env },
         signal: combined,
         timeout: 15000,
         maxBuffer: 16384,

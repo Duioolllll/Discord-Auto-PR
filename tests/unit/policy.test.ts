@@ -72,7 +72,7 @@ describe('state machine and contracts', () => {
       }).success,
     ).toBe(false);
   });
-  it('rejects negative costs', () => {
+  it('rejects retired billing fields on CLI completion', () => {
     expect(
       CompleteAttempt.safeParse({
         leaseToken: 'x'.repeat(64),

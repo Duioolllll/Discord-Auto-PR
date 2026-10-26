@@ -280,38 +280,18 @@ export async function checkConfiguration(
       commandOk,
       'JSON argv 배열로 지정하세요. 예: ["node","--test"]. 도구·의존성은 워커 이미지에 준비해야 합니다.',
     );
-    const mode = value('HUB_CODEX_AUTH_MODE') || 'chatgpt';
-    add(
-      'HUB_CODEX_AUTH_MODE',
-      ['chatgpt', 'api-key'].includes(mode),
-      '기본 chatgpt는 계정 로그인. OpenAI API 키를 사용할 때만 api-key를 선택하세요.',
-    );
-    if (mode === 'chatgpt') {
-      let loggedIn = false;
-      try {
-        await validateCodexAuthDirectory(codexAuthDirectory(value('HUB_CODEX_AUTH_DIR')));
-        loggedIn = true;
-      } catch {
-        /* No credential details are returned. */
-      }
-      add(
-        'HUB_CODEX_AUTH_DIR',
-        loggedIn,
-        '전용 로그인 파일·권한만 확인합니다. 없으면 워커에서 pnpm codex:login을 실행하세요. 모델 접근은 codex:status와 별도 검증이 필요합니다.',
-      );
-      if (value('HUB_CODEX_API_KEY') || value('HUB_CODEX_API_KEY_FILE'))
-        warn(
-          'HUB_CODEX_API_KEY',
-          'chatgpt 모드에서는 이 API 키 설정을 사용하지 않습니다. API 키 없이 계정 로그인으로 진행하세요.',
-        );
-    } else if (mode === 'api-key') {
-      const key = await secret('HUB_CODEX_API_KEY', 'HUB_CODEX_API_KEY_FILE');
-      add(
-        'HUB_CODEX_API_KEY',
-        key.length > 0,
-        'OpenAI API 키가 필요합니다. Reason API 키·GitHub 키·ChatGPT 로그인 코드와 구분하세요. 유효성은 원격 검증 전입니다.',
-      );
+    let loggedIn = false;
+    try {
+      await validateCodexAuthDirectory(codexAuthDirectory(value('HUB_CODEX_AUTH_DIR')));
+      loggedIn = true;
+    } catch {
+      /* No credential details are returned. */
     }
+    add(
+      'HUB_CODEX_AUTH_DIR',
+      loggedIn,
+      '전용 CLI 로그인 파일·권한만 확인합니다. 없으면 워커에서 pnpm codex:login을 실행하세요. 실제 준비는 codex:status·runner:check로 확인합니다.',
+    );
   }
   return checks;
 }

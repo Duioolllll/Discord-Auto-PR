@@ -11,7 +11,7 @@
   },
   "scripts": {
     "generate": "prisma generate",
-    "migrate": "prisma migrate deploy",
+    "init": "prisma migrate deploy",
     "build": "tsup src/index.ts --format esm --clean"
   },
   "dependencies": {

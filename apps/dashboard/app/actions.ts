@@ -24,21 +24,6 @@ export async function logout() {
   (await cookies()).delete('hub_session');
   redirect('/');
 }
-export async function configureBudget(form: FormData) {
-  const repositoryId = String(form.get('repositoryId'));
-  if (!/^[a-f0-9-]{36}$/.test(repositoryId)) throw new Error('INVALID_REPOSITORY');
-  try {
-    await api(`/repositories/${repositoryId}/budget`, 'POST', {
-      limitCents: Number(form.get('limitCents')),
-    });
-  } catch (error) {
-    redirect(
-      `/?error=${encodeURIComponent(error instanceof Error ? error.message : 'REQUEST_FAILED')}`,
-    );
-  }
-  revalidatePath('/');
-  redirect('/#repositories');
-}
 export async function createJob(form: FormData) {
   let job: { job: { id: string } };
   try {
@@ -48,7 +33,7 @@ export async function createJob(form: FormData) {
       instruction: String(form.get('instruction')),
       engine: 'codex',
       kind: 'develop',
-      maxCostCents: Number(form.get('maxCostCents')),
+      timeoutSeconds: Number(form.get('timeoutSeconds')),
     });
   } catch (error) {
     redirect(

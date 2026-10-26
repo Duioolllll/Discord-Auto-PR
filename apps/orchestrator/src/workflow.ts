@@ -1,28 +1,8 @@
-import { type Database, type Transaction } from '@hub/db';
+import { type Database } from '@hub/db';
 import { canMerge, requireCondition, redactLog } from '@hub/policy';
 import { validateChanges, type GitHubGateway } from '@hub/github';
 import { PublishResult, RunResult, type RepositorySnapshot } from '@hub/contracts';
 import { hash, Orchestrator, type Actor } from './service.js';
-
-export async function reserveBudget(
-  tx: Transaction,
-  repositoryId: string,
-  jobId: string,
-  cents: number,
-) {
-  await tx.$queryRaw`SELECT "id" FROM "Budget" WHERE "repositoryId" = ${repositoryId} FOR UPDATE`;
-  const budget = await tx.budget.findUnique({ where: { repositoryId } });
-  requireCondition(
-    budget && budget.limitCents - budget.spentCents - budget.reservedCents >= cents,
-    'BUDGET_EXCEEDED',
-    402,
-  );
-  await tx.budget.update({
-    where: { id: budget.id },
-    data: { reservedCents: { increment: cents } },
-  });
-  await tx.budgetReservation.create({ data: { jobId, cents } });
-}
 
 export class Workflow {
   constructor(
@@ -154,7 +134,6 @@ export class Workflow {
         await tx.transactionOutbox.create({
           data: { topic: 'job.pr_opened', payload: { jobId: prepared.job.id, url: pr.url } },
         });
-        await this.recordUsage(tx, prepared.job.id, body.eventId, body.result.usage);
         return link;
       });
     } catch (error) {
@@ -167,38 +146,6 @@ export class Workflow {
         },
       });
       throw error;
-    }
-  }
-
-  async recordUsage(
-    tx: Transaction,
-    jobId: string,
-    eventId: string,
-    usage: { source: string; amountUsd?: number; inputTokens?: number; outputTokens?: number }[],
-  ) {
-    for (const [index, sample] of usage.entries()) {
-      const micros = Math.ceil((sample.amountUsd ?? 0) * 1e6);
-      requireCondition(Number.isSafeInteger(micros) && micros <= 2147483647, 'USAGE_LIMIT');
-      for (const count of [sample.inputTokens, sample.outputTokens])
-        requireCondition(
-          count === undefined || (Number.isSafeInteger(count) && count >= 0 && count <= 2147483647),
-          'USAGE_LIMIT',
-        );
-      // Worker observations never become provider billing proof.
-      const source = sample.source === 'provider_actual' ? 'token_estimate' : sample.source;
-      await tx.usageSample.upsert({
-        where: { eventId: `${jobId}:${eventId}:${index}` },
-        create: {
-          jobId,
-          eventId: `${jobId}:${eventId}:${index}`,
-          source,
-          amountMicros: micros,
-          inputTokens: sample.inputTokens,
-          outputTokens: sample.outputTokens,
-          pricingVersion: 'worker-observation-v1',
-        },
-        update: {},
-      });
     }
   }
 
@@ -285,8 +232,6 @@ export class Workflow {
         await tx.transactionOutbox.create({
           data: { topic: 'job.pr_opened', payload: { jobId, url: pr.url } },
         });
-        if (prepared.result)
-          await this.recordUsage(tx, jobId, `recovery-${prepared.step.id}`, prepared.result.usage);
         return link;
       });
     } catch (error) {

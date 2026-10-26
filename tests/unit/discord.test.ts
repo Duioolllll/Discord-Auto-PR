@@ -151,7 +151,6 @@ it('preserves safe API error codes without exposing other response fields or cre
 it.each([
   ['UNAUTHORIZED', 401, 'BOT_API_TOKEN'],
   ['FORBIDDEN', 403, '역할'],
-  ['BUDGET_EXCEEDED', 402, '예산'],
   ['JOB_NOT_FOUND', 404, '전체 작업 ID'],
   ['GITHUB_ACCOUNT_LINK_REQUIRED', 403, '/identity/github'],
   ['MERGE_POLICY_REJECTED', 409, '필수 CI'],

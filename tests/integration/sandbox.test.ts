@@ -87,7 +87,6 @@ it('masks only the explicit login from sandbox commands and keeps API keys out o
         workspace,
         codexAuthDirectory: profile,
         seccompProfilePath: codexSeccompPath,
-        env: { CODEX_API_KEY: 'fixture-key' },
         timeoutSeconds: 20,
         maxOutputBytes: 4096,
       },

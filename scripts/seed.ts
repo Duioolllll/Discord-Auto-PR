@@ -5,12 +5,8 @@ const fullName = process.env.SEED_REPOSITORY;
 const installationId = process.env.SEED_INSTALLATION_ID;
 const discordId = process.env.SEED_DISCORD_USER_ID;
 const mergeInstallationId = process.env.SEED_MERGE_INSTALLATION_ID;
-const budget =
-  process.env.SEED_BUDGET_CENTS === undefined ? undefined : Number(process.env.SEED_BUDGET_CENTS);
 if (mergeInstallationId && !/^\d+$/.test(mergeInstallationId))
   throw new Error('Invalid merge installation ID');
-if (budget !== undefined && (!Number.isSafeInteger(budget) || budget < 0 || budget > 100000000))
-  throw new Error('Invalid budget');
 if (!databaseUrl || !fullName || !installationId)
   throw new Error(
     'DATABASE_URL, SEED_REPOSITORY, SEED_INSTALLATION_ID are required. Use a real GitHub App installation ID.',
@@ -26,12 +22,6 @@ try {
       create: { fullName, installationId, mergeInstallationId },
       update: { installationId, mergeInstallationId },
     });
-    if (budget !== undefined)
-      await tx.budget.upsert({
-        where: { repositoryId: repository.id },
-        create: { repositoryId: repository.id, limitCents: budget },
-        update: { limitCents: budget },
-      });
     if (discordId)
       await tx.roleBinding.upsert({
         where: {

@@ -28,7 +28,6 @@ export function operations(
     const identity = actor(request);
     return db.repository.findMany({
       where: identity.admin ? {} : { roles: { some: { actorId: identity.id } } },
-      include: { budget: true },
       orderBy: { fullName: 'asc' },
     });
   });
@@ -173,27 +172,6 @@ export function operations(
   app.post('/jobs/:id/reconcile-merge', async (request) =>
     workflow.reconcileMerge(admin(request), id(request)),
   );
-  app.get('/cost', async (request) => {
-    const identity = actor(request);
-    requireCondition(
-      identity.admin ||
-        (await db.roleBinding.count({ where: { actorId: identity.id, role: 'admin' } })) > 0,
-      'PROJECT_ADMIN_REQUIRED',
-      403,
-    );
-    const where = identity.admin
-      ? {}
-      : { job: { repository: { roles: { some: { actorId: identity.id, role: 'admin' } } } } };
-    const bySource = await db.usageSample.groupBy({
-      by: ['source', 'currency'],
-      where,
-      _sum: { amountMicros: true, inputTokens: true, outputTokens: true },
-    });
-    return {
-      bySource,
-      note: 'Provider actual, token estimate and runtime estimate are distinct. Reservations remain held until operator reconciliation.',
-    };
-  });
   app.get('/dead-letters', async (request) => {
     admin(request);
     return db.deadLetter.findMany({ orderBy: { createdAt: 'desc' }, take: 100 });
@@ -213,84 +191,6 @@ export function operations(
           resourceId: letter.eventId,
           action: 'outbox.retry_requested',
           details: { topic: letter.topic },
-        },
-      });
-      return { ok: true };
-    });
-  });
-  app.post('/repositories/:id/budget', async (request) => {
-    const identity = admin(request);
-    const repositoryId = id(request);
-    const { limitCents } = z
-      .object({ limitCents: z.number().int().min(0).max(100000000) })
-      .strict()
-      .parse(request.body);
-    return db.$transaction(async (tx) => {
-      const budget = await tx.budget.upsert({
-        where: { repositoryId },
-        create: { repositoryId, limitCents },
-        update: { limitCents },
-      });
-      await tx.auditEvent.create({
-        data: {
-          actorId: identity.id,
-          action: 'budget.configured',
-          resourceId: repositoryId,
-          details: { limitCents },
-        },
-      });
-      return budget;
-    });
-  });
-  app.post('/jobs/:id/cost/reconcile', async (request) => {
-    const identity = admin(request);
-    const jobId = id(request);
-    const input = z
-      .object({
-        actualCents: z.number().int().nonnegative().max(100000),
-        evidenceReference: z.string().min(1).max(300),
-      })
-      .strict()
-      .parse(request.body);
-    return db.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT "id" FROM "Job" WHERE "id" = ${jobId} FOR UPDATE`;
-      const job = await tx.job.findUniqueOrThrow({ where: { id: jobId } });
-      requireCondition(
-        [
-          'MERGED',
-          'CANCELLED',
-          'FAILED',
-          'NEEDS_HUMAN_ACTION',
-          'PR_OPEN',
-          'APPROVAL_WAIT',
-        ].includes(job.status),
-        'JOB_STILL_RUNNING',
-      );
-      const reservation = await tx.budgetReservation.findUniqueOrThrow({ where: { jobId } });
-      requireCondition(reservation.status === 'RESERVED', 'ALREADY_RECONCILED');
-      await tx.budget.update({
-        where: { repositoryId: job.repositoryId },
-        data: {
-          reservedCents: { decrement: reservation.cents },
-          spentCents: { increment: input.actualCents },
-        },
-      });
-      await tx.budgetReservation.update({ where: { jobId }, data: { status: 'SETTLED' } });
-      await tx.usageSample.create({
-        data: {
-          jobId,
-          eventId: `reconciled:${jobId}`,
-          source: 'provider_actual',
-          amountMicros: input.actualCents * 10000,
-          pricingVersion: input.evidenceReference,
-        },
-      });
-      await tx.auditEvent.create({
-        data: {
-          actorId: identity.id,
-          action: 'cost.reconciled',
-          resourceId: jobId,
-          details: input,
         },
       });
       return { ok: true };

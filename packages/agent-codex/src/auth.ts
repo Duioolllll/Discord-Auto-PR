@@ -3,15 +3,20 @@ import { constants } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export type CodexAuthentication =
-  | { mode: 'chatgpt'; directory: string }
-  | { mode: 'api-key'; apiKey: string };
+export interface CodexAuthentication {
+  directory: string;
+}
 
 // A dedicated application profile; never discover or copy this agent's ambient Codex login.
 export const defaultCodexAuthDirectory = fileURLToPath(
   new URL('../../../.local/codex-auth', import.meta.url),
 );
-export const fileCredentialArguments = ['-c', 'cli_auth_credentials_store="file"'];
+export const fileCredentialArguments = [
+  '-c',
+  'cli_auth_credentials_store="file"',
+  '-c',
+  'forced_login_method="chatgpt"',
+];
 // CLI credentials remain readable by the trusted CLI, but are masked from its commands.
 export const codexPermissionArguments = [
   '-c',

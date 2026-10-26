@@ -21,31 +21,21 @@ export function parseCodexEvents(output: string): RunResult {
   let summary = '';
   let completed = false;
   let failed = false;
-  const usage: RunResult['usage'] = [];
   for (const line of output.split('\n').filter(Boolean)) {
     const event = JSON.parse(line) as {
       type?: string;
       item?: { type?: string; text?: string };
-      usage?: { input_tokens?: number; output_tokens?: number };
     };
     if (event.type === 'item.completed' && event.item?.type === 'agent_message')
       summary = (event.item.text ?? '').slice(0, 8000);
     if (event.type === 'turn.failed' || event.type === 'error') failed = true;
-    if (event.type === 'turn.completed') {
-      completed = true;
-      usage.push({
-        source: 'token_estimate',
-        inputTokens: event.usage?.input_tokens,
-        outputTokens: event.usage?.output_tokens,
-      });
-    }
+    if (event.type === 'turn.completed') completed = true;
   }
   return {
     status: completed && !failed && summary ? 'success' : 'failed',
     summary,
     changedPaths: [],
     artifacts: [],
-    usage,
   };
 }
 
@@ -65,16 +55,12 @@ export class CodexAdapter implements AgentAdapter {
   async healthcheck() {
     if (!/^hub-egress-[a-z0-9-]+$/.test(this.configuration.network)) return false;
     const { auth } = this.configuration;
-    if (auth.mode === 'api-key' && !auth.apiKey) return false;
-    if (auth.mode === 'chatgpt') {
-      try {
-        await validateCodexAuthDirectory(auth.directory);
-      } catch {
-        return false;
-      }
+    try {
+      await validateCodexAuthDirectory(auth.directory);
+    } catch {
+      return false;
     }
     if (!(await checkCodexSandbox(this.configuration.image)).ready) return false;
-    if (auth.mode === 'api-key') return true;
     const workspace = await mkdtemp(resolve(tmpdir(), 'hub-codex-auth-probe-'));
     try {
       return chatGPTLoginConfirmed(
@@ -111,8 +97,7 @@ export class CodexAdapter implements AgentAdapter {
           network: this.configuration.network,
           timeoutSeconds: spec.limits.timeoutSeconds,
           maxOutputBytes: spec.limits.maxOutputBytes,
-          env: auth.mode === 'api-key' ? { CODEX_API_KEY: auth.apiKey } : {},
-          codexAuthDirectory: auth.mode === 'chatgpt' ? auth.directory : undefined,
+          codexAuthDirectory: auth.directory,
           seccompProfilePath: codexSeccompPath,
         },
         codexExecArguments(),
@@ -120,7 +105,7 @@ export class CodexAdapter implements AgentAdapter {
         signal,
       );
       const parsed = parseCodexEvents(result.output);
-      parsed.summary = redactLog(parsed.summary, auth.mode === 'api-key' ? [auth.apiKey] : []);
+      parsed.summary = redactLog(parsed.summary);
       return result.code === 0
         ? parsed
         : {
@@ -134,7 +119,6 @@ export class CodexAdapter implements AgentAdapter {
         summary: 'Runner aborted, timed out, or exceeded its output limit.',
         changedPaths: [],
         artifacts: [],
-        usage: [],
       };
     }
   }

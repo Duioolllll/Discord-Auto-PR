@@ -150,7 +150,7 @@ Codex 실행기와 로그인 상태 확인 컨테이너에만 확장 정책을 �
 | 내부 명령 네트워크 | 권한 프로필에서 차단, Bubblewrap의 새 network namespace와 실제 연결 거절 검사                |
 | 파일시스템         | 작업 workspace만 일반 bind, 임시 HOME·`/tmp`는 tmpfs. 인증은 지정한 프로필만 예외적으로 연결 |
 | 내부 쓰기          | `:workspace`를 상속한 프로필 사용. workspace와 허용된 임시 공간 외 쓰기 제한                 |
-| 인증               | CLI만 파일/키 사용, 내부 명령의 인증 파일 접근과 키 환경변수 상속 차단                       |
+| 인증               | CLI만 전용 로그인 파일 사용, 내부 명령의 인증 파일 접근과 키 환경변수 상속 차단              |
 | seccomp            | 기본 deny 유지. Codex 컨테이너에만 위 5개 syscall의 제한된 예외 추가                         |
 
 namespace 생성·mount 관련 kernel 공격 표면은 Docker 기본 정책보다 증가합니다.
@@ -200,7 +200,7 @@ seccomp는 경로 문자열이나 호출자의 namespace 소속 자체를 검사
 - 내부 capability가 0이고 seccomp 필터가 추가되었는지 확인.
 - workspace 쓰기 성공, 외부 HOME sentinel 수정 거절, 인증·갱신 fixture 및 `/proc/self/root` 별칭을 통한 읽기 거절 확인.
 - 인증 폴더 밖의 patch helper로 workspace 파일을 실제 생성할 수 있는지 확인.
-- API 키 fixture가 내부 환경에서 사라졌는지 확인.
+- 모델 API 키가 컨테이너 환경에 전달되지 않는지 확인.
 - 외부 컨테이너의 loopback 서버에 내부 명령이 접속하지 못하는지 확인.
 - 위 조건을 모두 통과한 내부 명령만 stdout에 **정확히 `sandbox-ready`**를 씀.
   종료 코드 0·정확한 출력·workspace 검증 marker를 함께 확인함.
