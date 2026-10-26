@@ -50,6 +50,11 @@ PR 생성 후 사람 승인·병합을 연결하는 절차는 [별도 운영자 
 
 ## 키 발급과 설정
 
+**키·ID·파일 경로가 헷갈리면 [연동 설정 안내표](docs/integration-settings.md)를 먼저 확인하세요.**
+필요한 단계별 설정, 각 값의 발급 위치·사용처, 여러 PC에서 맞춰야 하는 값과 재시작할 서비스를 정리했습니다.
+`pnpm config:check`로 내부 설정을, `pnpm config:check --scope discord`로 Discord 설정을 확인할 수 있습니다.
+다른 검사 범위는 `github`, `merge`, `worker`이며 하나씩 지정합니다. 비밀값은 출력하지 않으며 실제 원격 연결 검사는 별도입니다.
+
 **Codex는 ChatGPT 계정으로 로그인하므로 OpenAI API 키가 필요 없습니다.**
 GitHub App·Discord 봇은 각 서비스에서 생성합니다. 이미지·네트워크·테스트 명령은 직접 지정하는 설정입니다.
 대시보드 메인 화면의 **키 발급·설정 안내**에서도 로그인 전후에 같은 설정 순서를 확인할 수 있습니다.
@@ -235,6 +240,8 @@ SHA/CI 병합 차단, outbox/dead-letter와 실제 Docker 제한을 검증합니
 Browser E2E는 production Next 빌드에서 로그인·작업 생성·취소·모바일·로그아웃을 확인합니다.
 packaged Chromium 대신 표준 Playwright browser를 설치한 환경에서는 해당 환경변수 없이 실행할 수 있습니다.
 테스트가 통과해도 실제 외부 계정·모델 E2E가 검증된 것은 아닙니다.
+
+복구·취소 경쟁, 연동 장애, 최신 로그, 재귀 탐색 한도 등 검토에서 발견한 15건의 수정과 회귀 검사 결과는 [수정 내역](docs/review-fixes.md)을 참고하세요.
 
 ## 저장소·봇·GitHub App
 

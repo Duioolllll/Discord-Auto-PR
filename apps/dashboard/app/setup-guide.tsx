@@ -5,7 +5,9 @@ export function SetupGuide() {
     <section id="setup" className="setup-guide" aria-labelledby="setup-heading">
       <div className="section-title">
         <h2 id="setup-heading">키 발급·설정 안내</h2>
-        <a href="https://github.com/Duioolllll/Discord-Auto-PR#키-발급과-설정">전체 설정 문서 ↗</a>
+        <a href="https://github.com/Duioolllll/Discord-Auto-PR/blob/main/docs/integration-settings.md">
+          키·ID·파일 경로 안내표 ↗
+        </a>
       </div>
       <p>
         처음 설치한다면{' '}
@@ -30,6 +32,64 @@ export function SetupGuide() {
       <p>
         각 항목을 펼쳐 발급 위치와 설정 순서를 확인하세요. 설정은 실행 서버의 <code>.env</code>에
         저장하고, <code>_FILE</code>에는 비밀값이 담긴 파일의 절대 경로를 넣습니다.
+      </p>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>필요한 것</th>
+              <th>어디서 얻나요?</th>
+              <th>어디에 쓰나요?</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>대시보드 로그인 값</td>
+              <td>
+                <code>pnpm setup:local</code>이 생성
+              </td>
+              <td>
+                <code>ADMIN_API_TOKEN</code> 값만 로그인 창에 입력
+              </td>
+            </tr>
+            <tr>
+              <td>Discord Bot 토큰</td>
+              <td>Developer Portal → Bot → Reset Token</td>
+              <td>
+                <code>pnpm discord:setup</code>에 숨김 입력
+              </td>
+            </tr>
+            <tr>
+              <td>봇의 API 내부 토큰</td>
+              <td>
+                <code>setup:local</code>이 별도로 생성
+              </td>
+              <td>
+                API와 봇의 <code>BOT_API_TOKEN</code>을 일치시킴
+              </td>
+            </tr>
+            <tr>
+              <td>GitHub App ID / 설치 ID</td>
+              <td>App General / 설치 설정 URL</td>
+              <td>
+                <code>GITHUB_APP_ID</code> / <code>SEED_INSTALLATION_ID</code>
+              </td>
+            </tr>
+            <tr>
+              <td>GitHub App PEM</td>
+              <td>App → Private keys</td>
+              <td>
+                <code>GITHUB_APP_PRIVATE_KEY_FILE</code>에 파일의 절대 경로
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        로컬 기본 설정은 <code>pnpm config:check</code>, Discord 설정은{' '}
+        <code>pnpm config:check --scope discord</code>로 확인하세요. 비밀값을 출력하거나 설정을
+        바꾸지 않습니다. 실제 연결은 <code>discord:check</code>, Codex 실행 준비는{' '}
+        <code>codex:status</code>·<code>runner:check</code>로 따로 확인합니다.
       </p>
       <details open>
         <summary>1. Codex CLI — ChatGPT 계정으로 로그인</summary>
@@ -78,10 +138,10 @@ export function SetupGuide() {
               설치하세요.
             </li>
             <li>
-              개발 App의 Webhook URL은 공개 HTTPS 주소의 <code>/webhooks/github</code>입니다. 직접
-              생성한 32자 이상의 임의 문자열을 Webhook secret에 입력하고, 같은 값을 파일에 저장해{' '}
-              <code>GITHUB_WEBHOOK_SECRET_FILE</code>로 지정합니다. Pull request·Check run·Check
-              suite·Status 이벤트를 선택하세요.
+              개발 App의 Webhook URL은 공개 HTTPS 주소의 <code>/webhooks/github</code>입니다.{' '}
+              <code>setup:local</code>이 생성한 <code>GITHUB_WEBHOOK_SECRET</code> 값을 App의
+              Webhook secret에도 입력합니다. <code>GITHUB_WEBHOOK_SECRET_FILE</code>을 지정했다면 그
+              파일 내용이 기준입니다. Pull request·Check run·Check suite·Status 이벤트를 선택하세요.
             </li>
           </ol>
           <p>

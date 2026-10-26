@@ -3,6 +3,9 @@
 **봇 토큰 한 번 입력 → 서버 선택 → 봇 실행** 순서입니다.
 GitHub App·Codex·워커가 아직 없어도 Discord 명령 목록과 `/help`부터 확인할 수 있습니다.
 
+`BOT_API_TOKEN`과 Discord Bot 토큰, 서버·사용자 ID가 헷갈리면 [연동 설정 안내](integration-settings.md#4-discord--bot-토큰-한-번만-직접-입력)를 확인하세요.
+`pnpm config:check --scope discord`는 값 노출·외부 요청 없이 설정 형식과 파일을 확인하고, `pnpm discord:check`는 실제 연결을 점검합니다.
+
 ## 1. 봇 토큰 준비
 
 [Discord Developer Portal](https://discord.com/developers/applications)에서 사용할 앱을 열거나 **New Application**으로 만듭니다.

@@ -4,6 +4,9 @@
 명령어는 코드 상자의 내용을 한 줄씩 터미널에 입력하면 됩니다. 명령어 앞에 `$`는 붙이지 않습니다.
 `실제값`, `YOUR_LINUX_USER`라고 적힌 부분은 본인 값으로 바꾸세요.
 
+설정 이름이 헷갈리면 [키·ID·파일 경로 안내표](integration-settings.md)를 함께 확인하세요.
+발급 위치, 어느 서비스가 읽는지, 파일과 인라인 값 중 무엇이 적용되는지, 단계별 검사 명령을 정리했습니다.
+
 진행 순서는 다음과 같습니다.
 
 | 단계 | 하는 일                                         | 완료하면 가능한 것                        |
@@ -157,6 +160,7 @@ cd "$HOME/Discord-Auto-PR"
 
 ```bash
 pnpm setup:local
+pnpm config:check
 pnpm infra:up
 pnpm db:generate
 pnpm db:migrate
@@ -165,13 +169,14 @@ pnpm build
 
 각 명령의 의미는 다음과 같습니다.
 
-| 명령          | 하는 일                        | 정상 완료 기준                                 |
-| ------------- | ------------------------------ | ---------------------------------------------- |
-| `setup:local` | 루트 `.env`에 내부 토큰을 생성 | 새 파일 생성 또는 기존 파일 보존 메시지        |
-| `infra:up`    | PostgreSQL·Redis 컨테이너 시작 | 두 서비스가 healthy 상태                       |
-| `db:generate` | Prisma DB 클라이언트 생성      | 클라이언트 생성 완료                           |
-| `db:migrate`  | DB 테이블 준비                 | migration 적용 완료 또는 적용할 migration 없음 |
-| `build`       | 앱·패키지 빌드                 | 작업들이 성공하고 명령 종료                    |
+| 명령           | 하는 일                        | 정상 완료 기준                                         |
+| -------------- | ------------------------------ | ------------------------------------------------------ |
+| `setup:local`  | 루트 `.env`에 내부 토큰을 생성 | 새 파일 생성 또는 기존 파일 보존 메시지                |
+| `config:check` | 내부 설정의 형식·혼용 검사     | `[수정 필요]` 없음. DB·Redis 접속은 다음 단계에서 확인 |
+| `infra:up`     | PostgreSQL·Redis 컨테이너 시작 | 두 서비스가 healthy 상태                               |
+| `db:generate`  | Prisma DB 클라이언트 생성      | 클라이언트 생성 완료                                   |
+| `db:migrate`   | DB 테이블 준비                 | migration 적용 완료 또는 적용할 migration 없음         |
+| `build`        | 앱·패키지 빌드                 | 작업들이 성공하고 명령 종료                            |
 
 상태를 다시 보려면:
 
@@ -188,7 +193,8 @@ nano .env
 `nano`에서는 **Ctrl+O → Enter**로 저장하고 **Ctrl+X**로 나옵니다.
 5단계까지는 생성된 설정을 수정할 필요가 없습니다.
 `.env.example`을 `.env`에 덮어쓰면 자동 생성된 내부 토큰이 사라지므로 덮어쓰지 마세요.
-기존 `.env`의 비어 있는 토큰 항목을 `setup:local`이 모두 자동 복구하는 것은 아닙니다.
+`setup:local`은 누락·빈 내부 토큰을 채우고 기존 비어 있지 않은 값은 보존합니다.
+Discord Bot 토큰·GitHub App 키 같은 외부 인증 정보는 [연동 설정 안내](integration-settings.md)에 따라 별도로 연결합니다.
 
 ## 5. 대시보드 실행
 

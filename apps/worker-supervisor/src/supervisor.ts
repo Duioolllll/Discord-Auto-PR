@@ -1,10 +1,10 @@
-import { mkdir, rm } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { mkdir, mkdtemp, rename, rm } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 import { Engine, Kind, type RepositorySnapshot } from '@hub/contracts';
 import type { AgentAdapter } from '@hub/agent-core';
-import { WorkerClient } from './client.js';
+import { WorkerApiError, WorkerClient } from './client.js';
 import { materialize, collectChanges } from './workspace.js';
 
 const Claim = z.object({
@@ -28,6 +28,7 @@ export async function supervise(options: {
   adapter: AgentAdapter;
   signal: AbortSignal;
   once?: boolean;
+  retryDelayMs?: number;
   verify: (workspace: string, signal: AbortSignal) => Promise<boolean>;
 }) {
   if (!(await options.adapter.healthcheck()))
@@ -42,9 +43,25 @@ export async function supervise(options: {
     }),
   );
   const client = new WorkerClient(options.baseUrl, registration.token);
+  let retryDelay = options.retryDelayMs ?? 1000;
   while (!options.signal.aborted) {
-    await client.request(`/workers/${registration.workerId}/heartbeat`, { leases: [] });
-    const raw = await client.request('/workers/claim', {});
+    let raw: Awaited<ReturnType<WorkerClient['request']>>;
+    try {
+      await client.request(
+        `/workers/${registration.workerId}/heartbeat`,
+        { leases: [] },
+        options.signal,
+      );
+      raw = await client.request('/workers/claim', {}, options.signal);
+      retryDelay = options.retryDelayMs ?? 1000;
+    } catch (error) {
+      if (options.signal.aborted) break;
+      if (error instanceof WorkerApiError && [400, 401, 403, 404].includes(error.status))
+        throw error;
+      await delay(retryDelay, undefined, { signal: options.signal }).catch(() => undefined);
+      retryDelay = Math.min(retryDelay * 2, 10000);
+      continue;
+    }
     if (!raw) {
       if (options.once) return;
       await delay(2000, undefined, { signal: options.signal }).catch(() => undefined);
@@ -52,22 +69,26 @@ export async function supervise(options: {
     }
     const lease = Claim.parse(raw);
     const proof = { leaseToken: lease.leaseToken, leaseVersion: lease.leaseVersion };
-    const progress = (eventId: string, message: string) =>
-      client.request(`/attempts/${lease.attemptId}/events`, { ...proof, eventId, message });
     const stop = new AbortController();
     const signal = AbortSignal.any([
       options.signal,
       stop.signal,
       AbortSignal.timeout(lease.job.timeoutSeconds * 1000),
     ]);
+    const progress = (eventId: string, message: string) =>
+      client.request(`/attempts/${lease.attemptId}/events`, { ...proof, eventId, message }, signal);
     const directory = resolve(options.root, lease.attemptId);
     const heartbeat = async () =>
-      client.request(`/workers/${registration.workerId}/heartbeat`, {
-        leases: [{ attemptId: lease.attemptId, ...proof }],
-      });
+      client.request(
+        `/workers/${registration.workerId}/heartbeat`,
+        {
+          leases: [{ attemptId: lease.attemptId, ...proof }],
+        },
+        signal,
+      );
     let heartbeatPending = false;
     const timer = setInterval(() => {
-      if (heartbeatPending) return;
+      if (heartbeatPending || signal.aborted) return;
       heartbeatPending = true;
       void heartbeat()
         .catch(() => stop.abort())
@@ -81,8 +102,9 @@ export async function supervise(options: {
       const snapshot = (await client.request(
         `/attempts/${lease.attemptId}/snapshot`,
         proof,
+        signal,
       )) as unknown as RepositorySnapshot;
-      await materialize(directory, snapshot);
+      await materialize(directory, snapshot, signal);
       const [owner, name] = lease.job.repository.split('/');
       if (!owner || !name || !options.adapter.supports(lease.job.kind))
         throw new Error('Unsupported workload');
@@ -113,7 +135,8 @@ export async function supervise(options: {
         }
       }
       if (signal.aborted) throw new Error('Lease revoked');
-      const changes = await collectChanges(directory, snapshot);
+      const changes = await collectChanges(directory, snapshot, signal);
+      signal.throwIfAborted();
       result.changedPaths = changes.map((change) => change.path);
       await heartbeat();
       if (result.status === 'success' && changes.length && lease.job.kind !== 'review') {
@@ -121,19 +144,28 @@ export async function supervise(options: {
           'publishing',
           `Submitting ${changes.length} validated file changes for PR publication.`,
         );
-        await client.request(`/attempts/${lease.attemptId}/publish`, {
-          ...proof,
-          eventId: `result-${lease.attemptId}`,
-          baseSha: snapshot.baseSha,
-          changes,
-          result,
-        });
+        signal.throwIfAborted();
+        await client.request(
+          `/attempts/${lease.attemptId}/publish`,
+          {
+            ...proof,
+            eventId: `result-${lease.attemptId}`,
+            baseSha: snapshot.baseSha,
+            changes,
+            result,
+          },
+          signal,
+        );
       } else {
-        await client.request(`/attempts/${lease.attemptId}/complete`, {
-          ...proof,
-          eventId: `result-${lease.attemptId}`,
-          result,
-        });
+        await client.request(
+          `/attempts/${lease.attemptId}/complete`,
+          {
+            ...proof,
+            eventId: `result-${lease.attemptId}`,
+            result,
+          },
+          signal,
+        );
       }
     } catch {
       await client
@@ -153,7 +185,18 @@ export async function supervise(options: {
     } finally {
       clearInterval(timer);
       stop.abort();
-      await rm(directory, { recursive: true, force: true });
+      try {
+        await rm(directory, { recursive: true, force: true, maxRetries: 2 });
+      } catch {
+        // The job cannot control its parent. Move its inaccessible tree out of the execution path.
+        try {
+          const quarantine = await mkdtemp(join(options.root, `.quarantine-${lease.attemptId}-`));
+          await rename(directory, join(quarantine, 'workspace'));
+        } catch {
+          // Attempt IDs are never reused, even if this host cannot rename the retained tree.
+        }
+        console.error('Workspace cleanup failed; isolated job files require operator cleanup.');
+      }
     }
     if (options.once) return;
   }

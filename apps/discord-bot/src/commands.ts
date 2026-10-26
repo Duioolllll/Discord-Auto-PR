@@ -173,7 +173,7 @@ export async function handleCommand(
       const jobId = encodeURIComponent(interaction.options.getString('job', true));
       const mutation = ['cancel', 'approve', 'merge'].includes(command);
       const result = await client.request(
-        `/jobs/${jobId}${command === 'logs' ? '/events' : mutation ? `/${command}` : ''}`,
+        `/jobs/${jobId}${command === 'logs' ? '/events?latest=true&limit=10' : mutation ? `/${command}` : ''}`,
         interaction.user.id,
         mutation ? 'POST' : 'GET',
         mutation ? {} : undefined,

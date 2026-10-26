@@ -1,6 +1,7 @@
 import { App } from '@octokit/app';
 import { FileChange, SafePath, type RepositorySnapshot } from '@hub/contracts';
 import { requireCondition, containsOAuthCredential } from '@hub/policy';
+import { createGitHubApp } from './http.js';
 
 export interface RemoteRepository {
   mergeInstallationId?: string | null;
@@ -90,7 +91,7 @@ export class AppGitHubGateway implements GitHubGateway {
     private mutations = false,
     app?: Pick<App, 'getInstallationOctokit'>,
   ) {
-    this.app = app ?? new App(credentials);
+    this.app = app ?? createGitHubApp(credentials);
   }
   private async client(repo: RemoteRepository, merge = false) {
     requireCondition(!merge || this.mergeApp, 'MERGE_APP_NOT_CONFIGURED', 503);
@@ -148,11 +149,40 @@ export class AppGitHubGateway implements GitHubGateway {
     const client = await this.client(repo);
     const parts = repoParts(repo);
     const branch = `hub/job-${job.id}`;
+    const find = async () =>
+      (
+        await client.request('GET /repos/{owner}/{repo}/pulls', {
+          ...parts,
+          state: 'all',
+          head: `${parts.owner}:${branch}`,
+          base: repo.baseBranch,
+          per_page: 100,
+        })
+      ).data;
+    let pulls: { number: number; state: string; html_url: string; head: { sha: string } }[] =
+      await find();
+    requireCondition(
+      !pulls.length || (pulls.length === 1 && pulls[0]?.state === 'open'),
+      'PR_REQUIRES_RECONCILIATION',
+    );
     const base = await client.request('GET /repos/{owner}/{repo}/branches/{branch}', {
       ...parts,
       branch: repo.baseBranch,
     });
-    requireCondition(base.data.commit.sha === job.baseSha, 'BASE_CHANGED_REQUIRES_REVALIDATION');
+    requireCondition(
+      pulls.length > 0 || base.data.commit.sha === job.baseSha,
+      'BASE_CHANGED_REQUIRES_REVALIDATION',
+    );
+    const requireCurrentBase = async () => {
+      const current = await client.request('GET /repos/{owner}/{repo}/branches/{branch}', {
+        ...parts,
+        branch: repo.baseBranch,
+      });
+      requireCondition(
+        current.data.commit.sha === job.baseSha,
+        'BASE_CHANGED_REQUIRES_REVALIDATION',
+      );
+    };
     const original = await client.request('GET /repos/{owner}/{repo}/git/commits/{commit_sha}', {
       ...parts,
       commit_sha: job.baseSha,
@@ -203,6 +233,8 @@ export class AppGitHubGateway implements GitHubGateway {
       requireCondition(ref.data.object.sha === commit.data.sha, 'BRANCH_CONFLICT');
     } catch (error) {
       if (!(error instanceof Error && 'status' in error && error.status === 404)) throw error;
+      requireCondition(!pulls.length, 'BRANCH_CONFLICT');
+      await requireCurrentBase();
       try {
         await client.request('POST /repos/{owner}/{repo}/git/refs', {
           ...parts,
@@ -225,19 +257,8 @@ export class AppGitHubGateway implements GitHubGateway {
           throw creationError;
       }
     }
-    const find = async () =>
-      (
-        await client.request('GET /repos/{owner}/{repo}/pulls', {
-          ...parts,
-          state: 'all',
-          head: `${parts.owner}:${branch}`,
-          base: repo.baseBranch,
-          per_page: 100,
-        })
-      ).data;
-    let pulls: { number: number; state: string; html_url: string; head: { sha: string } }[] =
-      await find();
     if (!pulls.length) {
+      await requireCurrentBase();
       try {
         const created = await client.request('POST /repos/{owner}/{repo}/pulls', {
           ...parts,

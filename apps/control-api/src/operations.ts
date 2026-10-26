@@ -98,14 +98,20 @@ export function operations(
   app.get('/jobs/:id/events', async (request) => {
     const jobId = id(request);
     await service.getJob(actor(request), jobId);
-    const { after } = z
-      .object({ after: z.coerce.number().int().nonnegative().default(0) })
+    const { after, latest, limit } = z
+      .object({
+        after: z.coerce.number().int().nonnegative().default(0),
+        latest: z.enum(['true', 'false']).default('false'),
+        limit: z.coerce.number().int().min(1).max(100).default(100),
+      })
       .parse(request.query);
+    requireCondition(latest !== 'true' || after === 0, 'INVALID_EVENT_CURSOR', 400);
     const events = await db.jobEvent.findMany({
       where: { jobId, sequence: { gt: after } },
-      orderBy: { sequence: 'asc' },
-      take: 100,
+      orderBy: { sequence: latest === 'true' ? 'desc' : 'asc' },
+      take: limit,
     });
+    if (latest === 'true') events.reverse();
     return { events, cursor: events.at(-1)?.sequence ?? after };
   });
   app.get('/jobs/:id/stream', async (request, reply) => {

@@ -4,6 +4,9 @@
 이 문서는 **PR이 생성된 다음 사람 리뷰와 병합을 연결하는 절차**입니다.
 현재 계정 연결·역할 관리를 위한 일반 사용자 화면은 없으므로 운영자가 내부 API/DB로 준비합니다.
 
+App ID·installation ID·App PEM·사람의 GitHub 사용자 토큰은 [연동 설정 안내표](integration-settings.md#5-github--app-id-두-개와-installation-id-두-개)에서 구분할 수 있습니다.
+`pnpm config:check --scope merge`로 두 App의 로컬 설정을 확인한 뒤 아래 사람 계정·역할 연결을 진행하세요.
+
 승인자는 요청자와 다른 실제 GitHub 사용자여야 합니다.
 저장소 Rulesets의 필수 리뷰·체크를 유지하고 App을 규칙 우회 대상으로 추가하지 마세요.
 단순히 관리자 토큰을 사용하는 것으로 사람 리뷰나 서로 다른 사용자 조건이 생략되지는 않습니다.

@@ -104,7 +104,11 @@ export class Orchestrator {
   async getJob(actor: Actor, id: string) {
     const job = await this.db.job.findUnique({
       where: { id },
-      include: { events: { orderBy: { createdAt: 'asc' }, take: 100 }, repository: true },
+      include: {
+        events: { orderBy: { createdAt: 'asc' }, take: 100 },
+        repository: true,
+        pullRequest: true,
+      },
     });
     requireCondition(job, 'JOB_NOT_FOUND', 404);
     await this.authorize(actor, job.repositoryId);

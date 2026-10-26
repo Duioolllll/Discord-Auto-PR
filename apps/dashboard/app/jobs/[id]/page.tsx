@@ -21,7 +21,7 @@ export default async function JobPage({
   try {
     [job, { events }, audit] = await Promise.all([
       api<Job>(`/jobs/${id}`),
-      api<{ events: typeof events }>(`/jobs/${id}/events`),
+      api<{ events: typeof events }>(`/jobs/${id}/events?latest=true`),
       api<typeof audit>(`/audit?jobId=${id}`),
     ]);
   } catch {

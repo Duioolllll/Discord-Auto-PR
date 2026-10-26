@@ -1,7 +1,8 @@
 import type { Database } from '@hub/db';
 import type { Queue } from '@hub/queue';
 
-export async function dispatchOutbox(db: Database, queue: Queue) {
+export async function dispatchOutbox(db: Database, queue: Queue, signal?: AbortSignal) {
+  if (signal?.aborted) return 0;
   const entries = await db.transactionOutbox.findMany({
     where: { publishedAt: null, attempts: { lt: 5 }, nextAttemptAt: { lte: new Date() } },
     orderBy: { createdAt: 'asc' },
@@ -9,6 +10,7 @@ export async function dispatchOutbox(db: Database, queue: Queue) {
   });
   let published = 0;
   for (const entry of entries) {
+    if (signal?.aborted) break;
     // Retain queue IDs: a crash between add() and the DB update must deduplicate on retry.
     try {
       await queue.add(entry.topic, entry.payload, {

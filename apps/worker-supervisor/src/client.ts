@@ -1,3 +1,9 @@
+export class WorkerApiError extends Error {
+  constructor(readonly status: number) {
+    super(`Worker API rejected request (${status})`);
+  }
+}
+
 export class WorkerClient {
   constructor(
     private baseUrl: string,
@@ -10,15 +16,18 @@ export class WorkerClient {
     )
       throw new Error('Worker requires HTTPS outside loopback');
   }
-  async request(path: string, body: unknown) {
+  async request(path: string, body: unknown, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     const response = await fetch(new URL(path, this.baseUrl), {
       method: 'POST',
       headers: { authorization: `Bearer ${this.token}`, 'content-type': 'application/json' },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(10000),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(10000)])
+        : AbortSignal.timeout(10000),
       redirect: 'error',
     });
-    if (!response.ok) throw new Error(`Worker API rejected request (${response.status})`);
+    if (!response.ok) throw new WorkerApiError(response.status);
     if (response.status === 204) return null;
     return response.json() as Promise<Record<string, unknown>>;
   }

@@ -111,8 +111,8 @@ export class Workflow {
     const repo = await this.db.repository.findUniqueOrThrow({
       where: { id: prepared.job.repositoryId },
     });
-    requireCondition(repo.enabled, 'REPOSITORY_DISABLED', 403);
     try {
+      requireCondition(repo.enabled, 'REPOSITORY_DISABLED', 403);
       const pr = await this.remote().publish(
         repo,
         { ...prepared.job, baseSha: body.baseSha },
@@ -179,6 +179,11 @@ export class Workflow {
     for (const [index, sample] of usage.entries()) {
       const micros = Math.ceil((sample.amountUsd ?? 0) * 1e6);
       requireCondition(Number.isSafeInteger(micros) && micros <= 2147483647, 'USAGE_LIMIT');
+      for (const count of [sample.inputTokens, sample.outputTokens])
+        requireCondition(
+          count === undefined || (Number.isSafeInteger(count) && count >= 0 && count <= 2147483647),
+          'USAGE_LIMIT',
+        );
       // Worker observations never become provider billing proof.
       const source = sample.source === 'provider_actual' ? 'token_estimate' : sample.source;
       await tx.usageSample.upsert({
@@ -208,56 +213,93 @@ export class Workflow {
 
   async reconcilePublish(actor: Actor, jobId: string) {
     requireCondition(actor.admin, 'ADMIN_REQUIRED', 403);
-    const job = await this.orchestrator.getJob(actor, jobId);
-    requireCondition(job.status === 'NEEDS_HUMAN_ACTION', 'RECONCILIATION_NOT_REQUIRED');
-    const step = await this.db.jobStep.findUnique({
-      where: { jobId_key: { jobId, key: 'publish-pr' } },
-    });
-    requireCondition(step?.status === 'STARTED' && step.result, 'NO_PUBLISH_PLAN');
-    const plan = step.result as { baseSha: string; changes: unknown; result?: unknown };
-    const changes = PublishResult.shape.changes.parse(plan.changes);
-    validateChanges(changes);
-    requireCondition(
-      hash(JSON.stringify(changes)) === step.inputHash && plan.baseSha === job.baseSha,
-      'PLAN_CHANGED',
-    );
-    // Explicit operator recovery repeats only the persisted, deterministic branch/PR plan.
-    const pr = await this.remote().publish(
-      job.repository,
-      { ...job, baseSha: plan.baseSha },
-      changes,
-    );
-    return this.db.$transaction(async (tx) => {
-      const link = await tx.pRLink.upsert({
-        where: { jobId },
-        create: { ...pr, jobId, branch: `hub/job-${jobId}` },
-        update: { ...pr },
+    const prepared = await this.db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Job" WHERE "id" = ${jobId} FOR UPDATE`;
+      const job = await tx.job.findUniqueOrThrow({
+        where: { id: jobId },
+        include: { repository: true },
       });
-      await tx.jobStep.update({
-        where: { id: step.id },
-        data: { status: 'DONE', result: { ...pr } },
+      requireCondition(job.status === 'NEEDS_HUMAN_ACTION', 'RECONCILIATION_NOT_REQUIRED');
+      requireCondition(job.repository.enabled, 'REPOSITORY_DISABLED', 403);
+      const step = await tx.jobStep.findUnique({
+        where: { jobId_key: { jobId, key: 'publish-pr' } },
       });
+      requireCondition(step?.status === 'STARTED' && step.result, 'NO_PUBLISH_PLAN');
+      const plan = step.result as { baseSha: string; changes: unknown; result?: unknown };
+      const changes = PublishResult.shape.changes.parse(plan.changes);
+      validateChanges(changes);
+      const result = plan.result ? RunResult.parse(plan.result) : undefined;
+      requireCondition(
+        hash(JSON.stringify(changes)) === step.inputHash && plan.baseSha === job.baseSha,
+        'PLAN_CHANGED',
+      );
+      // Claim the operation under the same job lock used by cancellation and lease expiry.
       await tx.job.update({
         where: { id: jobId },
-        data: { status: 'PR_OPEN', errorCode: null, version: { increment: 1 } },
+        data: { status: 'PUBLISHING', version: { increment: 1 } },
       });
-      await tx.auditEvent.create({
+      return { job, step, changes, result, baseSha: plan.baseSha, version: job.version + 1 };
+    });
+    try {
+      const repository = await this.db.repository.findUniqueOrThrow({
+        where: { id: prepared.job.repositoryId },
+      });
+      requireCondition(repository.enabled, 'REPOSITORY_DISABLED', 403);
+      const pr = await this.remote().publish(
+        repository,
+        { ...prepared.job, baseSha: prepared.baseSha },
+        prepared.changes,
+      );
+      return await this.db.$transaction(async (tx) => {
+        const changed = await tx.job.updateMany({
+          where: { id: jobId, status: 'PUBLISHING', version: prepared.version },
+          data: { status: 'PR_OPEN', errorCode: null, version: { increment: 1 } },
+        });
+        requireCondition(changed.count === 1, 'CONCURRENT_MODIFICATION');
+        const link = await tx.pRLink.upsert({
+          where: { jobId },
+          create: { ...pr, jobId, branch: `hub/job-${jobId}` },
+          update: { ...pr },
+        });
+        await tx.jobStep.update({
+          where: { id: prepared.step.id },
+          data: { status: 'DONE', result: { ...pr } },
+        });
+        await tx.jobAttempt.updateMany({
+          where: { jobId, status: { in: ['LEASED', 'RUNNING'] } },
+          data: { status: 'COMPLETED', ...(prepared.result ? { result: prepared.result } : {}) },
+        });
+        await tx.jobEvent.upsert({
+          where: { eventId: `pr:${jobId}` },
+          create: { jobId, eventId: `pr:${jobId}`, kind: 'PR_OPEN', message: pr.url },
+          update: {},
+        });
+        await tx.auditEvent.create({
+          data: {
+            actorId: actor.id,
+            resourceId: jobId,
+            action: 'publish.reconciled',
+            details: { ...pr },
+          },
+        });
+        await tx.transactionOutbox.create({
+          data: { topic: 'job.pr_opened', payload: { jobId, url: pr.url } },
+        });
+        if (prepared.result)
+          await this.recordUsage(tx, jobId, `recovery-${prepared.step.id}`, prepared.result.usage);
+        return link;
+      });
+    } catch (error) {
+      await this.db.job.updateMany({
+        where: { id: jobId, status: 'PUBLISHING', version: prepared.version },
         data: {
-          actorId: actor.id,
-          resourceId: jobId,
-          action: 'publish.reconciled',
-          details: { ...pr },
+          status: 'NEEDS_HUMAN_ACTION',
+          errorCode: 'PUBLISH_REQUIRES_RECONCILIATION',
+          version: { increment: 1 },
         },
       });
-      if (plan.result)
-        await this.recordUsage(
-          tx,
-          jobId,
-          `recovery-${step.id}`,
-          RunResult.parse(plan.result).usage,
-        );
-      return link;
-    });
+      throw error;
+    }
   }
 
   async approve(actor: Actor, jobId: string) {

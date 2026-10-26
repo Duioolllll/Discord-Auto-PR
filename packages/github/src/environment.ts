@@ -1,6 +1,6 @@
-import { App } from '@octokit/app';
 import { readFileSync } from 'node:fs';
 import { AppGitHubGateway } from './client.js';
+import { createGitHubApp } from './http.js';
 
 export function githubFromEnvironment(env: NodeJS.ProcessEnv = process.env) {
   const { GITHUB_APP_ID, GITHUB_MERGE_APP_ID } = env;
@@ -19,7 +19,7 @@ export function githubFromEnvironment(env: NodeJS.ProcessEnv = process.env) {
     throw new Error('Merge App must be separate from the development App');
   const mergeApp =
     GITHUB_MERGE_APP_ID && GITHUB_MERGE_APP_PRIVATE_KEY
-      ? new App({
+      ? createGitHubApp({
           appId: GITHUB_MERGE_APP_ID,
           privateKey: GITHUB_MERGE_APP_PRIVATE_KEY.replaceAll('\\n', '\n'),
         })

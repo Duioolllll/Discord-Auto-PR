@@ -58,9 +58,9 @@ export const RunResult = z
         z
           .object({
             source: z.enum(['provider_actual', 'token_estimate', 'runtime_estimate']),
-            inputTokens: z.number().int().nonnegative().optional(),
-            outputTokens: z.number().int().nonnegative().optional(),
-            amountUsd: z.number().finite().nonnegative().optional(),
+            inputTokens: z.number().int().nonnegative().max(2147483647).optional(),
+            outputTokens: z.number().int().nonnegative().max(2147483647).optional(),
+            amountUsd: z.number().finite().nonnegative().max(2147.483647).optional(),
           })
           .strict(),
       )
