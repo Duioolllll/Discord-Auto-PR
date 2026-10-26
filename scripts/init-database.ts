@@ -2,6 +2,8 @@ import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Pool } from '@hub/db';
+import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 
 export const cliFoundation = '20261026000100_cli_foundation';
 export async function requireCliDatabase(client: Pick<Pool, 'query'>, schema = 'public') {
@@ -15,13 +17,24 @@ export async function requireCliDatabase(client: Pick<Pool, 'query'>, schema = '
     const quotedSchema = '"' + schema.replaceAll('"', '""') + '"';
     const history = (
       await client.query(
-        `SELECT migration_name, finished_at, rolled_back_at FROM ${quotedSchema}."_prisma_migrations"`,
+        `SELECT migration_name, checksum, finished_at, rolled_back_at FROM ${quotedSchema}."_prisma_migrations"`,
       )
     ).rows;
     if (tables.length === 1 && history.length === 0) return;
     if (
       history.length === 1 &&
       history[0].migration_name === cliFoundation &&
+      history[0].checksum ===
+        createHash('sha256')
+          .update(
+            await readFile(
+              new URL(
+                `../packages/db/prisma/migrations/${cliFoundation}/migration.sql`,
+                import.meta.url,
+              ),
+            ),
+          )
+          .digest('hex') &&
       history[0].finished_at &&
       !history[0].rolled_back_at
     )

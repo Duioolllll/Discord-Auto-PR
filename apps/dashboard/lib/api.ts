@@ -1,6 +1,7 @@
 import 'server-only';
 import { cookies } from 'next/headers';
 import { sealToken, openToken } from './session-crypto';
+import { controlApiUrl } from './control-url';
 
 export const seal = (token: string) => sealToken(token, process.env.DASHBOARD_SESSION_SECRET ?? '');
 export async function sessionToken() {
@@ -15,12 +16,7 @@ export async function api<T>(
 ): Promise<T> {
   const token = suppliedToken ?? (await sessionToken());
   if (!token) throw new Error('AUTH_REQUIRED');
-  const base = new URL(process.env.CONTROL_API_URL ?? 'http://127.0.0.1:3001');
-  if (
-    base.protocol !== 'https:' &&
-    !(base.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(base.hostname))
-  )
-    throw new Error('HTTPS_REQUIRED');
+  const base = controlApiUrl();
   const response = await fetch(new URL(path, base), {
     method,
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },

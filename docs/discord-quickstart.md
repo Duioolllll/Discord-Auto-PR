@@ -14,38 +14,9 @@ GitHub App·Codex·워커가 아직 없어도 Discord 명령 목록과 `/help`�
 
 ## 2. 연결 도우미 실행
 
-`Command "discord:setup" not found`라면 실행 중인 저장소의 `package.json`이 이전 버전입니다.
-`FULL TURBO` 빌드 성공은 새 스크립트를 받았는지 확인하는 검사가 아닙니다.
-먼저 `git status --short`로 로컬 수정 파일을 확인하고 `git pull --ff-only`로 갱신하세요.
-pull이 로컬 수정 때문에 중단되면 필요한 **소스 파일만** 명시적으로 보관한 뒤 다시 진행합니다.
-예를 들어 수정된 파일이 Runner의 `index.ts` 하나라면:
+[도구와 의존성 설치](getting-started.md#2-gitnodejspnpm-설치)를 마친 저장소 루트에서 실행합니다. 같은 프로필의 기존 봇 프로세스가 실행 중이면 Ctrl+C로 종료하세요.
 
 ```bash
-git stash push -m "runner-local-before-update" -- packages/agent-codex/src/index.ts
-git pull --ff-only
-```
-
-이 명령은 지정한 추적 소스 파일의 변경을 보관합니다. `.env`·키·편집기 swap 파일은 Git에 추가하지 마세요.
-이전 Runner 변경은 최신 보안 수정과 비교한 뒤 필요한 부분만 복구합니다. 업데이트 직후 자동으로 전체 stash를 적용할 필요는 없습니다.
-
-다음으로 LTS 도구를 활성화합니다. Node 26 Current나 예전 pnpm이 PATH에 남아 있을 때도 이 순서로 갱신할 수 있습니다.
-
-```bash
-node --use-env-proxy scripts/setup-node.mjs
-source .local/activate-toolchain.sh
-pnpm install --frozen-lockfile
-pnpm toolchain:check
-node -p "Object.hasOwn(require('./package.json').scripts, 'discord:setup')"
-```
-
-버전 검사 성공과 마지막 명령의 `true`를 확인한 뒤 진행하세요.
-`false`면 아직 해당 명령이 포함된 소스를 받지 못한 것입니다. [버전 업데이트 안내](toolchain.md)도 참고하세요.
-
-Ubuntu/WSL 터미널에서 저장소 폴더로 이동합니다. 기존 봇이 실행 중이라면 먼저 Ctrl+C로 종료하세요.
-최신 코드가 아니라면 `git pull --ff-only`, `pnpm install --frozen-lockfile`을 먼저 실행합니다.
-
-```bash
-cd ~/Discord-Auto-PR
 pnpm discord:setup
 ```
 
@@ -110,7 +81,7 @@ pnpm discord:check
 
 | 결과·증상                                   | 할 일                                                                                                                                                      |
 | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Command "discord:setup" not found`         | 최신 소스인지 위 절차로 확인. `git pull --ff-only` 후 script 존재 검사                                                                                     |
+| `Command "discord:setup" not found`         | 현재 CLI 빌드의 저장소 루트인지, `package.json`에 해당 스크립트가 있는지 확인                                                                              |
 | `Unsupported engine` / Node 26·pnpm 10 표시 | `node scripts/setup-node.mjs` 후 `source .local/activate-toolchain.sh`로 프로젝트 Node LTS·pnpm 활성화                                                     |
 | 토큰 없음·유효하지 않음                     | `pnpm discord:setup`에서 Developer Portal의 **Bot 토큰** 연결                                                                                              |
 | `DISCORD_APPLICATION_MISMATCH`              | 토큰과 Application ID가 다른 앱. `pnpm discord:setup`으로 재연결                                                                                           |
@@ -142,5 +113,5 @@ Discord 연결은 된 상태입니다. 다음은 운영자의 저장소 등록�
 `discord:setup`의 숨김 입력·서버 재선택·설정 저장·명령 등록, 재실행, 읽기 전용 `discord:check`,
 기존 등록 명령, `dev:bot`의 시작·서버 범위 확인·`/help` 처리·종료를 검증합니다.
 Discord REST SDK는 모의 HTTP 서버에 연결하며 외부 네트워크를 차단합니다. Gateway 이벤트는 테스트용 클라이언트가 제공합니다.
-별도 테스트는 10개 slash 명령을 실제 Control API·PostgreSQL·Redis에 연결해 검증하며 GitHub 작업에는 FakeGitHub를 사용합니다.
+별도 테스트는 등록하는 slash 명령 전체를 실제 Control API·PostgreSQL·Redis에 연결해 검증하며 GitHub 작업에는 FakeGitHub를 사용합니다.
 실제 Discord 계정의 초대·채널 권한·Gateway 접속은 운영자의 `/help`·`/ping` 확인이 필요합니다.

@@ -1,6 +1,6 @@
 # 처음 설치하고 실행하기
 
-이 문서는 **내 컴퓨터에 처음 설치하는 경우**를 기준으로 설명합니다.
+이 문서는 **CLI 전용 새 빌드를 새 체크아웃·새 `.env`·빈 DB에 설치하는 경우**를 설명합니다. 초기 스키마에 예산·과금 모델은 없으며 과거 DB를 이관하지 않습니다.
 명령어는 코드 상자의 내용을 한 줄씩 터미널에 입력하면 됩니다. 명령어 앞에 `$`는 붙이지 않습니다.
 `실제값`, `YOUR_LINUX_USER`라고 적힌 부분은 본인 값으로 바꾸세요.
 
@@ -17,10 +17,10 @@
 | 11   | 다른 사람의 GitHub 리뷰·계정 연결·승인 설정     | 정책을 충족한 PR 병합                     |
 
 **우선 5단계까지 완료해 대시보드부터 열어 보세요.**
-그때는 GitHub 키, Discord 봇 토큰, OpenAI API 키가 없어도 됩니다.
+그때는 GitHub 키와 Discord 봇 토큰 없이 내부 서비스부터 확인할 수 있습니다. 모델 실행은 이후 단계의 CLI 로그인을 사용합니다.
 실제 AI 실행에는 Codex 로그인뿐 아니라 아래에서 설명하는 워커 환경이 필요합니다.
 최소 확장 seccomp 정책을 적용한 검증 환경에서 실제 Docker 내부 sandbox 검사가 통과했습니다.
-본인 호스트에서도 9단계의 `runner:check`가 성공해야 합니다. 이전 설치는 [Runner 업데이트 안내](runner-security.md#8-기존-설치-업데이트와-정상-실행-확인)를 먼저 확인하세요.
+본인 호스트에서도 9단계의 `runner:check`가 성공해야 합니다. 실패 원인은 [Runner 진단](runner-security.md#7-지원-환경과-실패-진단)에서 확인하세요.
 
 ## 1. 실행할 운영체제 준비
 
@@ -155,6 +155,8 @@ cd "$HOME/Discord-Auto-PR"
 ```
 
 ## 4. 로컬 설정과 데이터베이스 준비
+
+개발 DB는 `127.0.0.1:5433/hub_cli`, Redis는 `127.0.0.1:6380`으로 시작합니다. 테스트는 같은 PostgreSQL 서버의 별도 `hub_cli_test` DB를 사용합니다. 다른 DB 데이터가 있는 주소를 지정하면 `db:init`이 초기화를 거절합니다.
 
 다음 명령을 순서대로 실행합니다.
 
@@ -357,6 +359,8 @@ pnpm dev:bot
 4. 아래 명령으로 파일을 열고 토큰 값만 붙여넣은 뒤 저장합니다.
 
    ```bash
+   mkdir -p .local/secrets
+   chmod 700 .local/secrets
    nano .local/secrets/discord-bot-token
    chmod 600 .local/secrets/discord-bot-token
    realpath .local/secrets/discord-bot-token
@@ -392,23 +396,7 @@ SEED_REPOSITORY=본인GitHub아이디/작업할저장소 \
 이 명령은 해당 Discord 사용자에 저장소의 developer 역할을 부여합니다. 일반 요청자에게 전역 관리자 권한을 줄 필요는 없습니다.
 기존 등록을 갱신하는 명령입니다. 승인자의 reviewer 역할과 별도로 작업 요청자의 developer 역할을 관리하세요.
 
-봇 시작 시 명령을 자동 등록합니다. 별도 등록만 실행하고 종료하려는 운영자는 다음 호환 명령을 사용할 수 있습니다.
-
-```bash
-pnpm --filter @hub/discord-bot dev --register-commands
-```
-
-`Registered guild slash commands.`가 나오면 성공입니다.
-이 명령은 대상 서버의 이 애플리케이션 명령 목록을 갱신합니다.
-이어서 **터미널 D**에서 봇을 계속 실행합니다.
-
-```bash
-pnpm dev:bot
-```
-
-`Discord 봇 온라인`을 확인하고 선택한 Discord 서버에서 `/help`와 `/ping`을 선택해 실행합니다.
-저장소·작업 옵션은 추천 목록에서 선택할 수 있습니다. 봇 터미널은 계속 켜 두세요.
-`/status`를 실행할 때는 작업 ID가 필요합니다. 아직 작업이 없으면 다음 단계까지 진행한 뒤 사용하세요.
+**터미널 D**에서 `pnpm dev:bot`을 실행하고 계속 켜 둡니다. 정상 시작 시 `서버 명령 …개 확인 완료`와 `Discord 봇 온라인`을 확인한 뒤, 선택한 서버에서 `/help`·`/ping`을 실행하세요. 별도 수동 등록 단계는 필요 없습니다. 저장소·작업 옵션은 추천 목록에서 선택하며, 작업 조회에는 생성 응답의 전체 UUID를 사용합니다.
 
 ## 9. Codex CLI 로그인·실행 이미지 확인
 
@@ -480,7 +468,7 @@ Docker가 실행된다는 것과 Codex 내부 sandbox가 실행된다는 것은 
 ### `HUB_RUNNER_NETWORK` — 워커의 외부 접속 경로
 
 운영자가 **Codex 인증·서비스에 필요한 접속만 허용**하도록 구성한 Docker 네트워크 이름입니다.
-이름은 `hub-egress-`로 시작해야 합니다. ChatGPT 로그인 모드와 API 키 모드는 필요한 서비스 목적지가 다를 수 있습니다.
+이름은 `hub-egress-`로 시작해야 하며, ChatGPT 로그인과 Codex CLI 서비스 목적지를 허용해야 합니다.
 이미 준비된 네트워크가 있으면 이름을 설정하고 존재 여부를 확인합니다.
 
 ```dotenv
@@ -653,35 +641,33 @@ pnpm build
 | `GITHUB_ACCOUNT_LINK_REQUIRED` | 승인·병합을 실행하는 계정의 [GitHub 연결 절차](approval-setup.md) 확인. `/develop`·`/refactor` 생성 단계에는 연결을 요구하지 않음 |
 
 연결 실패·타임아웃이어도 서버가 쓰기 요청을 이미 처리했을 수 있습니다. 재요청 전에 대시보드나 `/status`에서 작업/PR 상태를 확인하세요.
-기존의 “요청을 처리하지 못했습니다. 저장소 권한…” 메시지만 나온다면 이전 봇 코드가 실행 중인 것입니다.
-저장소 루트에서 `git pull --ff-only`, `pnpm install --frozen-lockfile`, `pnpm build` 후 봇 프로세스를 재시작하세요.
-소스로 실행한다면 기존 `pnpm dev:bot` 터미널에서 Ctrl+C 후 `pnpm dev:bot`을 다시 실행합니다.
-새 봇이 시작하면서 추가·변경된 명령을 자동 등록합니다. 별도의 수동 재등록은 필요 없습니다.
+소스·설정을 변경했다면 봇 터미널에서 Ctrl+C 후 `pnpm dev:bot`으로 재시작합니다. 시작 시 추가·변경된 명령을 자동 등록합니다.
 
 ### 다른 설치·실행 문제
 
-| 증상                                             | 먼저 확인할 것                                                                                 |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| `node`·`pnpm`을 찾을 수 없음                     | Node 설치 때 PATH 설정을 완료했는지, Windows가 아닌 Ubuntu 터미널인지 확인                     |
-| Node 버전이 다름                                 | `node --version`, `command -v node` 확인. 새 터미널에도 PATH가 적용되어야 함                   |
-| Docker daemon 연결 불가                          | Docker Desktop/Engine 실행, WSL Integration 설정 확인                                          |
-| Docker permission denied                         | Ubuntu Docker 그룹 변경 후 다시 로그인. 워커를 sudo로 우회 실행하지 않음                       |
-| 3000·3001·5433·6380 포트 사용 중                 | 같은 프로젝트나 로컬 DB가 이미 실행 중인지 확인. 알 수 없는 프로세스를 종료하지 말고 먼저 식별 |
-| `.env`가 안 보임                                 | 숨김 파일임. 저장소 루트에서 `nano .env`로 열기                                                |
-| API가 `Invalid API configuration`으로 종료       | 내부 토큰이 비어 있거나 32자 미만인지 확인. 역할별 토큰은 서로 달라야 함                       |
-| 대시보드 로그인 실패                             | API `/readyz` 응답, `.env`의 `ADMIN_API_TOKEN`, 대시보드 재시작 확인                           |
-| 저장소 선택 목록이 비어 있음                     | 7단계 seed, 실제 App 설치, DB migration 확인                                                   |
-| `REPOSITORY_NOT_INSTALLED`                       | `owner/repository` 등록과 실제 installation ID 확인                                            |
-| `FORBIDDEN`·`REVIEWER_ROLE_REQUIRED`             | Discord 사용자 ID와 저장소별 developer/reviewer/admin 역할 확인                                |
-| GitHub 401·403·404                               | App ID·PEM 쌍, 설치 대상 저장소, App 권한, GitHub 정책 확인                                    |
-| Discord 명령이 없음                              | 봇 초대·대상 guild ID·`--register-commands` 성공 확인                                          |
-| `ChatGPT login required`·로그인 미감지           | 같은 워커·일반 사용자로 `pnpm codex:login`, 이어서 `pnpm codex:status` 실행                    |
-| Codex 프로필 잠금 오류                           | 같은 프로필을 쓰는 워커/로그인이 실행 중인지 확인. 종료가 확인된 오래된 잠금만 정리            |
-| `NAMESPACE_SANDBOX_UNAVAILABLE`                  | seccomp·kernel·LSM 제한 확인. [Runner 진단 안내](runner-security.md) 참고                      |
-| `Engine version, image or credentials not ready` | Codex 버전·이미지 ID·로그인·sandbox 검사·승인 네트워크를 순서대로 확인                         |
-| 테스트에서 pnpm·pytest 등을 찾을 수 없음         | 기본 이미지에 해당 도구가 없음. 도구와 의존성을 갖춘 맞춤 이미지 준비                          |
-| `QUEUED`에서 계속 대기                           | 실제 codex 워커 ONLINE 여부 확인. probe는 실행 워커가 아님                                     |
-| `NEEDS_HUMAN_ACTION`                             | 작업 상세의 오류와 감사 기록을 확인. 같은 외부 쓰기를 무조건 반복하지 않음                     |
+| 증상                                             | 먼저 확인할 것                                                                                                                        |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `node`·`pnpm`을 찾을 수 없음                     | Node 설치 때 PATH 설정을 완료했는지, Windows가 아닌 Ubuntu 터미널인지 확인                                                            |
+| Node 버전이 다름                                 | `node --version`, `command -v node` 확인. 새 터미널에도 PATH가 적용되어야 함                                                          |
+| Docker daemon 연결 불가                          | Docker Desktop/Engine 실행, WSL Integration 설정 확인                                                                                 |
+| Docker permission denied                         | Ubuntu Docker 그룹 변경 후 다시 로그인. 워커를 sudo로 우회 실행하지 않음                                                              |
+| 3000·3001·5433·6380 포트 사용 중                 | 같은 프로젝트나 로컬 DB가 이미 실행 중인지 확인. 알 수 없는 프로세스를 종료하지 말고 먼저 식별                                        |
+| `.env`가 안 보임                                 | 숨김 파일임. 저장소 루트에서 `nano .env`로 열기                                                                                       |
+| API가 `Invalid API configuration`으로 종료       | 내부 토큰이 비어 있거나 32자 미만인지 확인. 역할별 토큰은 서로 달라야 함                                                              |
+| 대시보드 로그인 실패                             | API `/readyz` 응답, `.env`의 `ADMIN_API_TOKEN`, 대시보드 재시작 확인                                                                  |
+| `CLI_DATABASE_NOT_EMPTY`                         | 새 CLI DB 주소와 초기화 이력·초기 SQL checksum 확인. 기존 DB를 덮어쓰지 말고 [빈 DB로 설치](cli-execution.md#초기-스키마와-작업-계약) |
+| 저장소 선택 목록이 비어 있음                     | 7단계 seed, 실제 App 설치, 새 CLI DB의 `db:init` 확인                                                                                 |
+| `REPOSITORY_NOT_INSTALLED`                       | `owner/repository` 등록과 실제 installation ID 확인                                                                                   |
+| `FORBIDDEN`·`REVIEWER_ROLE_REQUIRED`             | Discord 사용자 ID와 저장소별 developer/reviewer/admin 역할 확인                                                                       |
+| GitHub 401·403·404                               | App ID·PEM 쌍, 설치 대상 저장소, App 권한, GitHub 정책 확인                                                                           |
+| Discord 명령이 없음                              | 봇 초대·대상 guild ID·`dev:bot` 자동 등록 확인, `discord:check` 실행                                                                  |
+| `ChatGPT login required`·로그인 미감지           | 같은 워커·일반 사용자로 `pnpm codex:login`, 이어서 `pnpm codex:status` 실행                                                           |
+| Codex 프로필 잠금 오류                           | 같은 프로필을 쓰는 워커/로그인이 실행 중인지 확인. 종료가 확인된 오래된 잠금만 정리                                                   |
+| `NAMESPACE_SANDBOX_UNAVAILABLE`                  | seccomp·kernel·LSM 제한 확인. [Runner 진단 안내](runner-security.md) 참고                                                             |
+| `Engine version, image or credentials not ready` | Codex 버전·이미지 ID·로그인·sandbox 검사·승인 네트워크를 순서대로 확인                                                                |
+| 테스트에서 pnpm·pytest 등을 찾을 수 없음         | 기본 이미지에 해당 도구가 없음. 도구와 의존성을 갖춘 맞춤 이미지 준비                                                                 |
+| `QUEUED`에서 계속 대기                           | 실제 codex 워커 ONLINE 여부 확인. probe는 실행 워커가 아님                                                                            |
+| `NEEDS_HUMAN_ACTION`                             | 작업 상세의 오류와 감사 기록을 확인. 같은 외부 쓰기를 무조건 반복하지 않음                                                            |
 
 어디까지 검증되었는지는 [구현 상태와 한계](implementation-status.md),
-각 환경변수의 발급 위치는 [README 키 발급표](../README.md#키-발급과-설정)를 확인하세요.
+각 환경변수의 발급 위치는 [연동 설정 안내표](integration-settings.md)를 확인하세요.

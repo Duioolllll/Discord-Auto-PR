@@ -13,6 +13,20 @@ export type { ControlClient } from './control-client.js';
 
 const development = ['develop', 'refactor'];
 const jobCommands = ['status', 'logs', 'cancel', 'approve', 'merge'];
+function recentLogs(events: { kind: string; message: string }[]) {
+  const lines: string[] = [];
+  let remaining = 1800;
+  for (const event of events.slice(-10).reverse()) {
+    const line = `${event.kind}: ${event.message}`;
+    if (line.length > remaining) {
+      if (!lines.length) lines.push(`${line.slice(0, remaining - 1)}…`);
+      break;
+    }
+    lines.unshift(line);
+    remaining -= line.length + 1;
+  }
+  return lines.join('\n') || '아직 이벤트가 없습니다.';
+}
 export const commands = [
   ...development.map((name) =>
     new SlashCommandBuilder()
@@ -163,11 +177,7 @@ export async function handleCommand(
         mutation ? {} : undefined,
       );
       if (command === 'logs')
-        content =
-          (result.events as { kind: string; message: string }[])
-            .slice(-10)
-            .map((event) => `${event.kind}: ${event.message}`)
-            .join('\n') || '아직 이벤트가 없습니다.';
+        content = recentLogs(result.events as { kind: string; message: string }[]);
       else if (command === 'approve')
         content = `승인 의사를 현재 SHA ${String(result.headSha)}에 기록했습니다. GitHub 리뷰와 필수 체크는 별도로 검증합니다.`;
       else if (command === 'merge') content = `병합 확인: ${String(result.sha)}`;

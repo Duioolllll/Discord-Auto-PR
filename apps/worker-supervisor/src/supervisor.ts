@@ -1,9 +1,10 @@
-import { mkdir, mkdtemp, rename, rm } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 import { Engine, Kind, type RepositorySnapshot } from '@hub/contracts';
 import type { AgentAdapter } from '@hub/agent-core';
+import { isContainerCleanupFailure, RunnerFailure } from '@hub/agent-codex';
 import { WorkerApiError, WorkerClient } from './client.js';
 import { materialize, collectChanges } from './workspace.js';
 
@@ -30,16 +31,42 @@ export async function supervise(options: {
   retryDelayMs?: number;
   verify: (workspace: string, signal: AbortSignal) => Promise<boolean>;
 }) {
-  if (!(await options.adapter.healthcheck()))
-    throw new Error('Engine version, image or credentials not ready');
+  options.signal.throwIfAborted();
   await mkdir(options.root, { recursive: true, mode: 0o700 });
+  const unsafeMarker = join(options.root, '.unsafe-runner');
+  const markUnsafe = async () => {
+    await writeFile(unsafeMarker, 'CONTAINER_CLEANUP_FAILED\n', { mode: 0o600, flag: 'wx' }).catch(
+      () => {
+        console.error(
+          'Runner cleanup failed; worker stopped. Confirm container cleanup before restarting.',
+        );
+      },
+    );
+  };
+  try {
+    await lstat(unsafeMarker);
+    throw new RunnerFailure('RUNNER_PROBE_FAILED', 'CONTAINER_CLEANUP_FAILED');
+  } catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+  }
+  try {
+    if (!(await options.adapter.healthcheck()))
+      throw new Error('Engine version, image or credentials not ready');
+  } catch (error) {
+    if (isContainerCleanupFailure(error)) await markUnsafe();
+    throw error;
+  }
   const enrollment = new WorkerClient(options.baseUrl, options.enrollmentToken);
   const registration = z.object({ workerId: z.string().uuid(), token: z.string() }).parse(
-    await enrollment.request('/workers/register', {
-      name: 'isolated-codex-worker',
-      engines: [options.adapter.engine],
-      maxConcurrent: 1,
-    }),
+    await enrollment.request(
+      '/workers/register',
+      {
+        name: 'isolated-codex-worker',
+        engines: [options.adapter.engine],
+        maxConcurrent: 1,
+      },
+      options.signal,
+    ),
   );
   const client = new WorkerClient(options.baseUrl, registration.token);
   let retryDelay = options.retryDelayMs ?? 1000;
@@ -77,6 +104,15 @@ export async function supervise(options: {
     const progress = (eventId: string, message: string) =>
       client.request(`/attempts/${lease.attemptId}/events`, { ...proof, eventId, message }, signal);
     const directory = resolve(options.root, lease.attemptId);
+    const quarantine = async () => {
+      try {
+        const retained = await mkdtemp(join(options.root, `.quarantine-${lease.attemptId}-`));
+        await rename(directory, join(retained, 'workspace'));
+      } catch {
+        // Attempt IDs are never reused if the host cannot rename the retained tree.
+      }
+    };
+    let unsafeCleanup = false;
     const heartbeat = async () =>
       client.request(
         `/workers/${registration.workerId}/heartbeat`,
@@ -102,6 +138,7 @@ export async function supervise(options: {
         `/attempts/${lease.attemptId}/snapshot`,
         proof,
         signal,
+        lease.job.timeoutSeconds * 1000,
       )) as unknown as RepositorySnapshot;
       await materialize(directory, snapshot, signal);
       const [owner, name] = lease.job.repository.split('/');
@@ -153,6 +190,7 @@ export async function supervise(options: {
             result,
           },
           signal,
+          lease.job.timeoutSeconds * 1000,
         );
       } else {
         await client.request(
@@ -165,7 +203,9 @@ export async function supervise(options: {
           signal,
         );
       }
-    } catch {
+    } catch (error) {
+      unsafeCleanup = isContainerCleanupFailure(error);
+      if (unsafeCleanup) await markUnsafe();
       await client
         .request(`/attempts/${lease.attemptId}/complete`, {
           ...proof,
@@ -179,20 +219,20 @@ export async function supervise(options: {
           },
         })
         .catch(() => undefined);
+      if (unsafeCleanup) throw error;
     } finally {
       clearInterval(timer);
       stop.abort();
-      try {
-        await rm(directory, { recursive: true, force: true, maxRetries: 2 });
-      } catch {
-        // The job cannot control its parent. Move its inaccessible tree out of the execution path.
+      if (unsafeCleanup) {
+        // A surviving container may still write this tree. Never traverse or collect it.
+        await quarantine();
+      } else {
         try {
-          const quarantine = await mkdtemp(join(options.root, `.quarantine-${lease.attemptId}-`));
-          await rename(directory, join(quarantine, 'workspace'));
+          await rm(directory, { recursive: true, force: true, maxRetries: 2 });
         } catch {
-          // Attempt IDs are never reused, even if this host cannot rename the retained tree.
+          await quarantine();
+          console.error('Workspace cleanup failed; isolated job files require operator cleanup.');
         }
-        console.error('Workspace cleanup failed; isolated job files require operator cleanup.');
       }
     }
     if (options.once) return;

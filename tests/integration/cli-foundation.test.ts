@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { Pool } from '@hub/db';
-import { requireCliDatabase } from '../../scripts/init-database.js';
+import { requireCliDatabase, cliFoundation } from '../../scripts/init-database.js';
 import { prepareTestDatabase } from '../helpers/test-db.js';
 
 process.loadEnvFile('.env');
@@ -68,6 +68,29 @@ it('refuses to initialize a populated unrelated schema and leaves its data untou
       { value: 'preserve' },
     ]);
     await expect(requireCliDatabase(client)).resolves.toBeUndefined();
+  } finally {
+    await client.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    client.release();
+  }
+});
+
+it('rejects a different foundation checksum even when its name matches', async () => {
+  const client = await pool.connect();
+  const schema = `different_foundation_${randomUUID().replaceAll('-', '')}`;
+  try {
+    await client.query(`CREATE SCHEMA "${schema}"`);
+    await client.query(
+      `CREATE TABLE "${schema}"."_prisma_migrations" (migration_name text, checksum text, finished_at timestamp, rolled_back_at timestamp)`,
+    );
+    await client.query(
+      `INSERT INTO "${schema}"."_prisma_migrations" VALUES ($1, $2, CURRENT_TIMESTAMP, NULL)`,
+      [cliFoundation, 'different-foundation'],
+    );
+    await expect(requireCliDatabase(client, schema)).rejects.toThrow('CLI_DATABASE_NOT_EMPTY');
+    expect(
+      (await client.query(`SELECT checksum FROM "${schema}"."_prisma_migrations"`)).rows[0]
+        .checksum,
+    ).toBe('different-foundation');
   } finally {
     await client.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
     client.release();

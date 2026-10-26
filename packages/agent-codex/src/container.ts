@@ -33,6 +33,10 @@ export class RunnerFailure extends Error {
   }
 }
 
+export function isContainerCleanupFailure(error: unknown): error is RunnerFailure {
+  return error instanceof RunnerFailure && error.diagnostic === 'CONTAINER_CLEANUP_FAILED';
+}
+
 export interface SandboxOptions {
   image: string;
   workspace: string;

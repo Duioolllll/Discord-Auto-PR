@@ -18,22 +18,27 @@ export async function dispatchOutbox(db: Database, queue: Queue, signal?: AbortS
         removeOnComplete: false,
         removeOnFail: false,
       });
-      await db.transactionOutbox.updateMany({
-        where: { id: entry.id, publishedAt: null },
-        data: { publishedAt: new Date() },
+      const changed = await db.$transaction(async (tx) => {
+        const result = await tx.transactionOutbox.updateMany({
+          where: { id: entry.id, publishedAt: null },
+          data: { publishedAt: new Date(), lastError: null },
+        });
+        // Another producer may have recorded its failure while this add was in flight.
+        await tx.deadLetter.deleteMany({ where: { eventId: entry.id } });
+        return result.count;
       });
-      published++;
+      published += changed;
     } catch {
       await db.$transaction(async (tx) => {
-        const current = await tx.transactionOutbox.update({
-          where: { id: entry.id },
+        const changed = await tx.transactionOutbox.updateMany({
+          where: { id: entry.id, publishedAt: null, attempts: entry.attempts },
           data: {
             attempts: { increment: 1 },
             lastError: 'QUEUE_PUBLISH_FAILED',
             nextAttemptAt: new Date(Date.now() + Math.min(60000, 1000 * 2 ** entry.attempts)),
           },
         });
-        if (current.attempts >= 5)
+        if (changed.count && entry.attempts + 1 >= 5)
           await tx.deadLetter.upsert({
             where: { eventId: entry.id },
             create: { eventId: entry.id, topic: entry.topic, reason: 'QUEUE_PUBLISH_FAILED' },

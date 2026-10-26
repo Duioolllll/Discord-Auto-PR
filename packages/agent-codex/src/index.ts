@@ -11,7 +11,12 @@ import {
   validateCodexAuthDirectory,
   type CodexAuthentication,
 } from './auth.js';
-import { runSandbox, codexSeccompPath } from './container.js';
+import {
+  runSandbox,
+  codexSeccompPath,
+  isContainerCleanupFailure,
+  RunnerFailure,
+} from './container.js';
 import { checkCodexSandbox } from './probe.js';
 export * from './auth.js';
 export * from './container.js';
@@ -60,7 +65,10 @@ export class CodexAdapter implements AgentAdapter {
     } catch {
       return false;
     }
-    if (!(await checkCodexSandbox(this.configuration.image)).ready) return false;
+    const probe = await checkCodexSandbox(this.configuration.image);
+    if (probe.diagnostic?.code === 'CONTAINER_CLEANUP_FAILED')
+      throw new RunnerFailure('RUNNER_PROBE_FAILED', 'CONTAINER_CLEANUP_FAILED');
+    if (!probe.ready) return false;
     const workspace = await mkdtemp(resolve(tmpdir(), 'hub-codex-auth-probe-'));
     try {
       return chatGPTLoginConfirmed(
@@ -79,7 +87,8 @@ export class CodexAdapter implements AgentAdapter {
           new AbortController().signal,
         ),
       );
-    } catch {
+    } catch (error) {
+      if (isContainerCleanupFailure(error)) throw error;
       return false;
     } finally {
       await rm(workspace, { recursive: true, force: true });
@@ -113,7 +122,8 @@ export class CodexAdapter implements AgentAdapter {
             status: 'failed',
             summary: 'Codex execution failed; raw stderr withheld to protect credentials.',
           };
-    } catch {
+    } catch (error) {
+      if (isContainerCleanupFailure(error)) throw error;
       return {
         status: signal.aborted ? 'cancelled' : 'failed',
         summary: 'Runner aborted, timed out, or exceeded its output limit.',

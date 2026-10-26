@@ -5,6 +5,7 @@ import {
   codexAuthDirectory,
   lockCodexProfile,
   validateCodexAuthDirectory,
+  isContainerCleanupFailure,
 } from '@hub/agent-codex';
 import { supervise } from './supervisor.js';
 import { resolve } from 'node:path';
@@ -41,6 +42,7 @@ if (!process.argv.includes('--probe')) {
   const stop = new AbortController();
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => stop.abort());
   const release = await lockCodexProfile(directory);
+  let unsafeCleanup = false;
   try {
     await supervise({
       baseUrl: CONTROL_API_URL,
@@ -70,8 +72,12 @@ if (!process.argv.includes('--probe')) {
         return result.code === 0;
       },
     });
+  } catch (error) {
+    unsafeCleanup = isContainerCleanupFailure(error);
+    throw error;
   } finally {
-    await release();
+    // A surviving container may still refresh this profile; keep its lock for operator cleanup.
+    if (!unsafeCleanup) await release();
   }
 } else {
   const enrollment = new WorkerClient(CONTROL_API_URL, WORKER_ENROLLMENT_TOKEN);

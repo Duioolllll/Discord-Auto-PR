@@ -14,18 +14,24 @@ export class Workflow {
     requireCondition(this.github, 'GITHUB_NOT_CONFIGURED', 503);
     return this.github;
   }
-  private async reviewer(actor: Actor, repositoryId: string) {
-    const repository = await this.db.repository.findUnique({ where: { id: repositoryId } });
+  private async reviewer(
+    actor: Actor,
+    repositoryId: string,
+    db: Pick<Database, 'repository' | 'roleBinding'> = this.db,
+  ) {
+    const repository = await db.repository.findUnique({ where: { id: repositoryId } });
     requireCondition(repository?.enabled, 'REPOSITORY_DISABLED', 403);
-    if (actor.admin) return;
-    const role = await this.db.roleBinding.findUnique({
-      where: { actorId_repositoryId: { actorId: actor.id, repositoryId } },
-    });
-    requireCondition(
-      role && ['reviewer', 'admin'].includes(role.role),
-      'REVIEWER_ROLE_REQUIRED',
-      403,
-    );
+    if (!actor.admin) {
+      const role = await db.roleBinding.findUnique({
+        where: { actorId_repositoryId: { actorId: actor.id, repositoryId } },
+      });
+      requireCondition(
+        role && ['reviewer', 'admin'].includes(role.role),
+        'REVIEWER_ROLE_REQUIRED',
+        403,
+      );
+    }
+    return repository;
   }
 
   async snapshot(
@@ -33,14 +39,25 @@ export class Workflow {
     attemptId: string,
     proof: { leaseToken: string; leaseVersion: number },
   ): Promise<RepositorySnapshot> {
-    const job = await this.db.$transaction(
-      async (tx) => (await this.orchestrator.validateLease(tx, workerId, attemptId, proof)).job,
-    );
+    const job = await this.db.$transaction(async (tx) => {
+      const attempt = await this.orchestrator.validateLease(tx, workerId, attemptId, proof);
+      requireCondition(
+        ['LEASED', 'RUNNING'].includes(attempt.status) &&
+          ['LEASED', 'RUNNING'].includes(attempt.job.status),
+        'ATTEMPT_FINISHED',
+      );
+      return attempt.job;
+    });
     const repo = await this.db.repository.findUniqueOrThrow({ where: { id: job.repositoryId } });
     requireCondition(repo.enabled, 'REPOSITORY_DISABLED', 403);
     const snapshot = await this.remote().snapshot(repo);
     await this.db.$transaction(async (tx) => {
       const current = await this.orchestrator.validateLease(tx, workerId, attemptId, proof);
+      requireCondition(
+        ['LEASED', 'RUNNING'].includes(current.status) &&
+          ['LEASED', 'RUNNING'].includes(current.job.status),
+        'ATTEMPT_FINISHED',
+      );
       requireCondition(
         !current.job.baseSha || current.job.baseSha === snapshot.baseSha,
         'BASE_CHANGED_REQUIRES_REVALIDATION',
@@ -65,7 +82,7 @@ export class Workflow {
       if (existing) {
         requireCondition(existing.inputHash === fingerprint, 'IDEMPOTENCY_CONFLICT');
         requireCondition(existing.status === 'DONE', 'PUBLISH_REQUIRES_RECONCILIATION');
-        return { job: attempt.job, duplicate: true };
+        return { job: attempt.job, duplicate: true, version: attempt.job.version };
       }
       requireCondition(
         attempt.job.status === 'RUNNING' && attempt.job.baseSha === body.baseSha,
@@ -84,7 +101,7 @@ export class Workflow {
         where: { id: attempt.jobId },
         data: { status: 'PUBLISHING', version: { increment: 1 } },
       });
-      return { job: attempt.job, duplicate: false };
+      return { job: attempt.job, duplicate: false, version: attempt.job.version + 1 };
     });
     if (prepared.duplicate)
       return this.db.pRLink.findUniqueOrThrow({ where: { jobId: prepared.job.id } });
@@ -99,7 +116,11 @@ export class Workflow {
         body.changes,
       );
       return await this.db.$transaction(async (tx) => {
-        await this.orchestrator.validateLease(tx, workerId, attemptId, body);
+        const current = await this.orchestrator.validateLease(tx, workerId, attemptId, body);
+        requireCondition(
+          current.job.status === 'PUBLISHING' && current.job.version === prepared.version,
+          'CONCURRENT_MODIFICATION',
+        );
         const link = await tx.pRLink.create({
           data: { ...pr, branch: `hub/job-${prepared.job.id}`, jobId: prepared.job.id },
         });
@@ -138,7 +159,7 @@ export class Workflow {
       });
     } catch (error) {
       await this.db.job.updateMany({
-        where: { id: prepared.job.id, status: 'PUBLISHING' },
+        where: { id: prepared.job.id, status: 'PUBLISHING', version: prepared.version },
         data: {
           status: 'NEEDS_HUMAN_ACTION',
           errorCode: 'PUBLISH_REQUIRES_RECONCILIATION',
@@ -278,6 +299,13 @@ export class Workflow {
       403,
     );
     return this.db.$transaction(async (tx) => {
+      await this.reviewer(actor, job.repositoryId, tx);
+      const currentIdentity = await tx.identity.findUnique({ where: { actorId: actor.id } });
+      requireCondition(
+        currentIdentity?.githubId === identity.githubId &&
+          currentIdentity.githubLogin === identity.githubLogin,
+        'APPROVAL_CHANGED',
+      );
       const approval = await tx.approval.upsert({
         where: { jobId_headSha_actorId: { jobId, headSha: pr.headSha, actorId: actor.id } },
         create: {
@@ -329,6 +357,7 @@ export class Workflow {
       data: { status: 'MERGING', version: { increment: 1 } },
     });
     requireCondition(locked.count === 1, 'MERGE_IN_PROGRESS');
+    let mergeVersion = job.version + 1;
     let requested = false;
     try {
       await this.reviewer(actor, job.repositoryId);
@@ -361,14 +390,25 @@ export class Workflow {
       );
       await this.db.$transaction(async (tx) => {
         const fenced = await tx.job.updateMany({
-          where: { id: jobId, status: 'MERGING', version: job.version + 1 },
+          where: { id: jobId, status: 'MERGING', version: mergeVersion },
           data: { version: { increment: 1 } },
         });
         requireCondition(fenced.count === 1, 'MERGE_CONTEXT_CHANGED');
+        const repository = await this.reviewer(actor, job.repositoryId, tx);
+        requireCondition(
+          repository.fullName === job.repository.fullName &&
+            repository.installationId === job.repository.installationId &&
+            repository.mergeInstallationId === job.repository.mergeInstallationId &&
+            repository.baseBranch === job.repository.baseBranch &&
+            JSON.stringify(repository.requiredChecks) ===
+              JSON.stringify(job.repository.requiredChecks),
+          'MERGE_CONTEXT_CHANGED',
+        );
         const currentApproval = await tx.approval.findUnique({ where: { id: approval.id } });
         const currentIdentity = await tx.identity.findUnique({ where: { actorId: actor.id } });
         requireCondition(
           currentApproval &&
+            currentIdentity?.githubId === identity.githubId &&
             currentApproval.githubId === currentIdentity?.githubId &&
             currentApproval.expiresAt.getTime() > Date.now(),
           'APPROVAL_CHANGED',
@@ -401,9 +441,15 @@ export class Workflow {
           },
         });
       });
+      mergeVersion++;
       requested = true;
       const result = await this.remote().merge(job.repository, pr.number, e.headSha);
       return await this.db.$transaction(async (tx) => {
+        const changed = await tx.job.updateMany({
+          where: { id: jobId, status: 'MERGING', version: mergeVersion },
+          data: { status: 'MERGED', errorCode: null, version: { increment: 1 } },
+        });
+        requireCondition(changed.count === 1, 'MERGE_CONTEXT_CHANGED');
         await tx.jobStep.update({
           where: { jobId_key: { jobId, key: 'merge-pr' } },
           data: {
@@ -421,10 +467,6 @@ export class Workflow {
           create: { jobId, sha: result.sha, headSha: e.headSha, actorId: actor.id },
           update: {},
         });
-        await tx.job.update({
-          where: { id: jobId },
-          data: { status: 'MERGED', version: { increment: 1 } },
-        });
         await tx.auditEvent.create({
           data: {
             actorId: actor.id,
@@ -440,7 +482,7 @@ export class Workflow {
       });
     } catch (error) {
       await this.db.job.updateMany({
-        where: { id: jobId, status: 'MERGING' },
+        where: { id: jobId, status: 'MERGING', version: mergeVersion },
         data: {
           status: requested ? 'NEEDS_HUMAN_ACTION' : 'APPROVAL_WAIT',
           errorCode: requested ? 'MERGE_REQUIRES_RECONCILIATION' : 'MERGE_POLICY_REJECTED',

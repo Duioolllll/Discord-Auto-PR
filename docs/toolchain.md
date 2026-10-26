@@ -3,21 +3,19 @@
 2026-10-25 공식 배포 정보를 확인해 다음 버전으로 고정했습니다.
 기준은 루트의 [`toolchain.json`](../toolchain.json)입니다.
 
-| 도구           | 버전        | 선택 기준                                                      |
-| -------------- | ----------- | -------------------------------------------------------------- |
-| Node.js        | **24.22.1** | 현재 배포된 최신 LTS 패치. Node 26은 확인일에 아직 Current     |
-| npm            | **11.19.1** | 해당 공식 Node LTS 배포본에 포함된 버전                        |
-| pnpm           | **12.15.0** | 최신 안정 배포. 별도 LTS 채널 없음                             |
-| Codex CLI      | **0.164.0** | 최신 안정 배포. 별도 LTS 채널 없음                             |
-| Node 타입 정의 | **24.19.2** | Node 24용 최신 타입 패키지. 런타임과 패치 번호를 공유하지 않음 |
+| 도구           | 버전        | 선택 기준                                        |
+| -------------- | ----------- | ------------------------------------------------ |
+| Node.js        | **24.22.1** | 프로젝트가 검증한 Node 24 LTS 패치               |
+| npm            | **11.19.1** | 해당 공식 Node LTS 배포본에 포함된 버전          |
+| pnpm           | **12.15.0** | 프로젝트가 검증한 안정 버전. 별도 LTS 채널 없음  |
+| Codex CLI      | **0.164.0** | 프로젝트가 검증한 안정 버전. 별도 LTS 채널 없음  |
+| Node 타입 정의 | **24.19.2** | Node 24용 타입 패키지. 런타임과 패치 번호는 별도 |
 
-Node의 `24.19.0`도 LTS 계열이지만 이번에 최신 패치로 갱신했습니다.
-Codex의 버전 앞자리 `0`은 프로젝트의 버전 체계이며 Node LTS 여부와는 관계가 없습니다.
 운영 실행에 `latest` 태그를 사용하지 않으며, 다음 업데이트도 새 고정 버전으로 검증합니다.
 
-## 이미 설치한 PC에서 업데이트
+## 도구 설치·업데이트
 
-API·봇·워커를 종료한 뒤 Ubuntu/WSL 터미널에서 실행합니다.
+새 설치는 [전체 설치 절차](getting-started.md)를 따릅니다. 같은 CLI 빌드에서 도구를 갱신할 때는 API·봇·워커를 종료한 뒤 Ubuntu/WSL 터미널에서 실행합니다.
 아래 도우미는 기존 Node로 시작할 수 있으며 시스템 설치와 Codex 로그인 프로필을 덮어쓰지 않습니다.
 
 ```bash
@@ -69,13 +67,27 @@ Sandbox 결과가 `{"ready":true,"reason":"OK"}`이고 전용 Codex 로그인과
 - Docker의 두 빌드 단계와 통합 테스트 이미지는 같은 Node 버전·공식 이미지 digest를 사용합니다.
 - Codex 호스트 로그인 검사·이미지 빌드·실행 검사는 같은 버전을 읽습니다. 다른 CLI나 이전 이미지면 계속 실패합니다.
 - 공식 Codex Linux x64 npm 아티팩트는 고정 SHA-512로 검증하며 버전별 빌드 캐시를 사용합니다.
-- pnpm 12에 맞춰 기존 `.npmrc` 설정과 `package.json`의 pnpm 설정을 `pnpm-workspace.yaml`로 옮겼습니다.
-- 설치 스크립트는 기존과 같이 esbuild·Prisma에만 허용합니다. 기존에 허용하지 않은 선택형 `msgpackr-extract`는 명시적으로 거절하고 JS 구현을 사용합니다. 보안 override도 유지합니다.
+- pnpm 정책은 `pnpm-workspace.yaml`에서 관리합니다.
+- 의존성 설치 스크립트는 esbuild·Prisma에만 허용합니다. 선택형 `msgpackr-extract`는 거절하고 JS 구현을 사용하며, 보안 override를 적용합니다.
 - 스크립트 실행 전 자동 설치는 끄고, `pnpm install --frozen-lockfile`로 설치합니다. 새 lockfile에는 pnpm 실행기 자체의 무결성도 기록됩니다.
 - `pnpm toolchain:check`는 호스트·packageManager·CI·Docker의 버전 불일치를 확인하며 CI에서도 실행합니다.
 
 Sandbox 정책을 완화하지 않고 새 버전으로 실제 중첩 격리를 다시 검증합니다.
 실제 모델 호출·GitHub PR 생성·병합은 이 버전 검증에 포함하지 않습니다.
+
+## 검증 명령
+
+통합 검사의 일반 Node 컨테이너는 다음 고정 이미지를 사용합니다. Codex 이미지는 `pnpm runner:build`로 별도 준비합니다.
+
+```bash
+docker pull node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205
+pnpm toolchain:check
+pnpm security:check
+pnpm runner:check
+pnpm audit --audit-level=high
+```
+
+전체 빌드·단위·통합·브라우저 검사 순서는 [README 검증](../README.md#검증)을 따릅니다. DB 검사는 전용 `hub_cli_test`를 사용하며 브라우저 검사와 동시에 실행하지 않습니다.
 
 ## 공식 확인 자료
 

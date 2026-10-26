@@ -1,6 +1,7 @@
 import { REST, Routes } from 'discord.js';
 import { isDeepStrictEqual } from 'node:util';
-import { lstat, readFile } from 'node:fs/promises';
+import { open } from 'node:fs/promises';
+import { constants } from 'node:fs';
 
 export const discordId = /^\d{17,20}$/;
 export class DiscordSetupError extends Error {
@@ -46,16 +47,32 @@ export async function botToken(
 ): Promise<string | undefined> {
   let token = env.DISCORD_BOT_TOKEN?.trim();
   if (env.DISCORD_BOT_TOKEN_FILE) {
+    let file;
     try {
-      const info = await lstat(env.DISCORD_BOT_TOKEN_FILE);
-      if (!info.isFile() || info.mode & 0o077 || (process.getuid && info.uid !== process.getuid()))
+      file = await open(
+        env.DISCORD_BOT_TOKEN_FILE,
+        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+      );
+      const info = await file.stat();
+      const maxBytes = 128 * 1024;
+      if (
+        !info.isFile() ||
+        info.size > maxBytes ||
+        info.mode & 0o077 ||
+        (process.getuid && info.uid !== process.getuid())
+      )
         throw new Error();
-      token = (await readFile(env.DISCORD_BOT_TOKEN_FILE, 'utf8')).trim();
+      const buffer = Buffer.alloc(maxBytes + 1);
+      const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
+      if (bytesRead > maxBytes) throw new Error();
+      token = buffer.subarray(0, bytesRead).toString('utf8').trim();
     } catch {
       throw new DiscordSetupError(
         'DISCORD_TOKEN_FILE_INVALID',
-        '봇 토큰 파일은 본인 소유의 일반 파일이며 권한이 0600이어야 합니다. 파일 경로·권한을 확인하세요.',
+        '봇 토큰 파일은 본인 소유의 128 KiB 이하 일반 파일이며 권한이 0600이어야 합니다. 파일 경로·권한을 확인하세요.',
       );
+    } finally {
+      await file?.close();
     }
   }
   if (!token) return undefined;

@@ -16,15 +16,15 @@ export class WorkerClient {
     )
       throw new Error('Worker requires HTTPS outside loopback');
   }
-  async request(path: string, body: unknown, signal?: AbortSignal) {
+  async request(path: string, body: unknown, signal?: AbortSignal, timeoutMs = 10000) {
     signal?.throwIfAborted();
     const response = await fetch(new URL(path, this.baseUrl), {
       method: 'POST',
       headers: { authorization: `Bearer ${this.token}`, 'content-type': 'application/json' },
       body: JSON.stringify(body),
       signal: signal
-        ? AbortSignal.any([signal, AbortSignal.timeout(10000)])
-        : AbortSignal.timeout(10000),
+        ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
+        : AbortSignal.timeout(timeoutMs),
       redirect: 'error',
     });
     if (!response.ok) throw new WorkerApiError(response.status);

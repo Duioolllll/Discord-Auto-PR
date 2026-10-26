@@ -1,7 +1,6 @@
 # Codex Runner의 seccomp 정책과 실제 격리 검사
 
-이 변경은 Docker의 seccomp를 끄는 대신, **Docker 기본 정책을 기반으로 Bubblewrap에 필요한 호출만 추가**합니다.
-실제 Codex/Bubblewrap 실행과 격리 검증이 모두 성공해야 다음 결과를 반환합니다.
+`pnpm runner:check`는 고정 이미지의 Codex/Bubblewrap과 실제 격리를 검사합니다. **Docker 기본 seccomp 정책에 필요한 호출만 추가한 전용 정책**을 사용하며 모든 검사가 성공해야 다음 결과를 반환합니다.
 
 ```json
 { "ready": true, "reason": "OK" }
@@ -21,13 +20,7 @@ Codex 0.164.0의 내장 Bubblewrap은 새 user namespace를 만든 뒤 그 names
 mount·PID·IPC·network 분리와 파일시스템 구성을 수행하므로 이 호출들이 필요합니다.
 Bubblewrap의 일반적인 namespace 오류 문구만 보고 호스트 커널 전체가 user namespace를 지원하지 않는다고 단정하면 안 됩니다.
 
-추가로 기존 검사에는 **CLI 문법 오류**가 있었습니다.
-0.164.0의 명령은 `codex sandbox -- 명령`입니다.
-`codex sandbox linux -- 명령`으로 실행하면 `linux`를 실행 파일 이름으로 해석합니다.
-seccomp에 먼저 막혀 있던 동안에는 이 두 번째 오류가 드러나지 않았습니다.
-
-HOME 초기화도 명확히 했습니다. 이미지 entrypoint가 임시 `CODEX_HOME`을 `0700`으로 준비하며,
-준비하지 못하면 고정 오류 코드로 중단합니다.
+Codex 0.164.0의 sandbox 명령은 `codex sandbox -- 명령`입니다. `linux` 하위 명령을 넣지 않습니다. 이미지 entrypoint는 임시 `CODEX_HOME`을 `0700`으로 준비하고 실패하면 고정 오류 코드로 중단합니다.
 
 ## 2. 정책의 출처와 최소 확장
 
@@ -139,9 +132,9 @@ Codex 실행기와 로그인 상태 확인 컨테이너에만 확장 정책을 �
 정책 파일이 없거나 변조되었거나 Docker가 적용하지 못하면 실행을 중단합니다.
 `unconfined`, privileged 모드, `SYS_ADMIN` 추가 또는 내부 sandbox 해제 방식으로 fallback하지 않습니다.
 
-## 4. 변경 전후 보안 모델
+## 4. 현재 보안 모델
 
-| 경계               | 변경 후                                                                                      |
+| 경계               | 적용하는 제한                                                                                |
 | ------------------ | -------------------------------------------------------------------------------------------- |
 | 외부 Docker rootfs | 기존 `--read-only` 유지                                                                      |
 | 외부 사용자·권한   | 비root UID/GID, `--cap-drop=ALL`, `no-new-privileges` 유지·실제 값 확인                      |
@@ -164,15 +157,24 @@ seccomp는 경로 문자열이나 호출자의 namespace 소속 자체를 검사
 
 워커는 변경 파일을 수집할 때 디렉터리까지 포함해 최대 2,000개 항목, 파일 1,000개, 전체 파일 내용 5 MiB, 파일당 1 MiB, 변경 파일 100개를 허용합니다. 수집 자체에도 30초 제한을 적용하며 작업 취소·시간 초과를 확인합니다. 심볼릭 링크·하드 링크를 거부하며, 취소 후에는 게시를 시작하지 않습니다. 이 한도는 컨테이너 실행 중의 디스크 사용량을 제한하는 quota는 아닙니다.
 
-권한이 제거된 디렉터리 등으로 작업 파일을 지우지 못하면 워커는 해당 트리를 `WORKER_ROOT/.quarantine-<attempt ID>-*/workspace`로 옮기고 다음 작업을 계속합니다. 옮기기도 실패하면 원래 attempt 경로에 남기며, attempt ID는 재사용하지 않습니다. 로그에는 고정된 정리 실패 메시지만 남깁니다. 운영자는 워커를 중지하고 해당 attempt와 경로·소유권을 확인한 뒤 격리된 파일을 별도로 점검·정리해야 합니다. 신뢰할 수 없는 트리의 링크를 따라 권한을 일괄 변경하지 마세요. 격리 파일은 자동 삭제되지 않으므로 디스크 잔여 용량을 확인하세요.
+컨테이너가 정상 종료된 뒤 권한이 제거된 디렉터리 등으로 작업 파일만 지우지 못하면 워커는 해당 트리를 `WORKER_ROOT/.quarantine-<attempt ID>-*/workspace`로 옮기고 다음 작업을 계속합니다. 옮기기도 실패하면 원래 attempt 경로에 남기며, attempt ID는 재사용하지 않습니다. 로그에는 고정된 정리 실패 메시지만 남깁니다. 운영자는 워커를 중지하고 해당 attempt와 경로·소유권을 확인한 뒤 격리된 파일을 별도로 점검·정리해야 합니다. 신뢰할 수 없는 트리의 링크를 따라 권한을 일괄 변경하지 마세요. 격리 파일은 자동 삭제되지 않으므로 디스크 잔여 용량을 확인하세요.
 
-워커의 유휴 heartbeat·작업 요청은 일시적인 연결 실패·서버 오류가 발생하면 최대 10초 간격으로 재시도합니다. 잘못된 요청·인증·권한·경로 오류(`400`·`401`·`403`·`404`)는 중단하므로 해당 설정을 수정해야 합니다. GitHub HTTP 요청에는 10초 제한을 적용하고, lease 만료 처리·PR 동기화·outbox 전달은 별도 주기로 실행해 한 연동 장애가 다른 처리를 막지 않게 합니다.
+컨테이너 삭제 자체가 `CONTAINER_CLEANUP_FAILED`로 실패하면 워커는 다음 작업을 받지 않고 중단합니다. 살아 있는 컨테이너가 파일을 계속 바꿀 수 있으므로 변경 수집·재귀 삭제를 하지 않고 작업 트리를 위 격리 경로로 이동합니다. `WORKER_ROOT/.unsafe-runner` 표시 파일을 남기며, CLI 프로필의 `.hub-profile.lock`도 유지합니다. 표시 파일이 있으면 재시작 시 healthcheck 전부터 거절합니다.
+
+이 경우 운영자는 워커가 중지된 상태에서 다음 순서로 복구합니다.
+
+1. `io.discord-ai-pr-hub.runner=1` 라벨의 잔류 컨테이너를 확인하고 해당 실패 작업의 컨테이너를 종료·삭제합니다. 정상 실행 중인 다른 워커의 컨테이너와 구분하세요.
+2. 해당 CLI 로그인 프로필을 쓰는 프로세스·컨테이너가 남아 있지 않은지 확인합니다.
+3. 격리된 workspace와 디스크 상태를 점검·정리합니다. 컨테이너가 살아 있을 때는 트리를 따라 파일을 수집하거나 권한을 일괄 변경하지 않습니다.
+4. 정리가 확인된 뒤 `WORKER_ROOT/.unsafe-runner`와 해당 프로필의 오래된 `.hub-profile.lock`을 제거하고 격리·로그인 검사를 거쳐 워커를 다시 시작합니다.
+
+워커의 유휴 heartbeat·작업 요청은 일시적인 연결 실패·서버 오류가 발생하면 최대 10초 간격으로 재시도합니다. 잘못된 요청·인증·권한·경로 오류(`400`·`401`·`403`·`404`)는 중단하므로 해당 설정을 수정해야 합니다. 일반 워커 API 요청은 10초로 제한합니다. snapshot 수신·PR 게시 요청은 작업의 전체 제한 시간과 취소 신호를 따르므로 여러 GitHub 요청이 필요한 작업을 단일 10초 요청으로 끊지 않습니다. GitHub 개별 HTTP 요청에는 10초 제한을 적용합니다. lease 만료 처리·PR 동기화·outbox 전달은 별도 주기로 실행해 한 연동 장애가 다른 처리를 막지 않게 합니다.
 
 ### 로그인 프로필과 민감한 로그
 
 - `HOME=/home/runner`, `CODEX_HOME=/home/runner/.codex`를 컨테이너 내부에 명시합니다.
 - 인증 없는 검사는 tmpfs 안에만 HOME을 준비합니다. 실제 로그인 폴더를 연결하지 않습니다.
-- 실제 ChatGPT 모드는 **사용자가 지정하고 로그인한 전용 프로필**만 연결합니다.
+- CLI 실행에는 **사용자가 지정하고 로그인한 전용 프로필**만 연결합니다.
   폴더는 worker 소유 `0700`, `auth.json`은 비공개 일반 파일이어야 하며 기존 symlink·소유자·권한·필수 token 필드 검사를 유지합니다.
 - 호스트의 개인 `~/.codex`나 이 작업을 수행하는 플랫폼의 로그인 파일을 자동 검색·복사하지 않습니다.
 - Codex의 `hub` 권한 프로필은 `:workspace`를 상속하고 **CODEX_HOME 전체**를 내부 명령에서 가립니다.
@@ -181,7 +183,7 @@ seccomp는 경로 문자열이나 호출자의 namespace 소속 자체를 검사
 - 이미지의 읽기 전용 `/usr/local/bin/apply_patch` helper가 동일한 고정 Codex 바이너리의 로컬 patch 모드를 호출합니다.
   인증 폴더를 읽게 하지 않고도 workspace 편집을 지원하며, 검사에서 실제 파일 생성까지 확인합니다.
 - 내부 명령에는 `CODEX_API_KEY`, `OPENAI_API_KEY`를 전달하지 않도록 명시적으로 제외합니다.
-  신뢰된 CLI의 API 인증은 유지합니다.
+  CLI는 별도로 연결한 ChatGPT 로그인 프로필만 사용합니다.
 - 프로필 파일은 OAuth 갱신을 위해 CLI에만 쓰기 가능하게 연결합니다. 별도 테스트 컨테이너에는 연결하지 않습니다.
 - 임시 HOME은 컨테이너 삭제와 함께 사라집니다. 사용자가 로그인한 **지속 프로필은 갱신·재사용을 위해 남겨 둡니다.**
 - 검사 로그에는 고정된 오류 분류·단계·종료 코드만 출력합니다. raw stderr, 토큰, `auth.json` 내용, 전체 환경변수를 출력하지 않습니다.
@@ -214,13 +216,7 @@ Ubuntu에서는 테스트용으로 `sudo apt-get install build-essential`을 사
 
 실제 확인 환경: **Linux kernel 6.18.55, Docker Engine 28.4.0, cgroup v2, Linux amd64, 일반 사용자 UID 1000**.
 이 환경에서 실제 Docker 내부 Codex 0.164.0의 격리 검사가 통과했습니다.
-이전 Codex 0.163.0은 **GitHub Ubuntu / kernel 6.17.0-1022-azure / Docker 28.0.4 / cgroup v2 / UID 1001**에서
-전용 AppArmor를 외부·내부 모두 enforce 모드로 유지한 검사와 전체 CI가 통과했습니다.
-이전 검증 기록: [GitHub Actions](https://github.com/Duioolllll/Discord-Auto-PR/actions/runs/40154578765).
-Node 24.22.1 LTS·Codex 0.164.0 업데이트도 같은 정책과 [CI 절차](https://github.com/Duioolllll/Discord-Auto-PR/actions/workflows/ci.yml)로 재검증합니다.
-버전 기준과 업그레이드 순서는 [도구 버전 안내](toolchain.md)를 참고하세요.
-사용자가 보고한 Ubuntu 26.10 / WSL2 / kernel 6.18.33.2 / Docker 29.1.3 머신에는 이 세션에서 직접 접속하지 않았습니다.
-그 머신의 최종 지원 여부는 아래 업데이트 후 동일 검사를 실행해 확인해야 합니다.
+호스트별 지원 여부는 동일한 `runner:check`를 직접 실행해 확인해야 합니다. Docker Desktop의 WSL 클라이언트와 daemon 호스트도 구분하세요. 버전 고정·교체 절차는 [도구 버전 안내](toolchain.md), 지속 검증은 [CI](../.github/workflows/ci.yml)를 따릅니다.
 
 필요 조건은 Linux amd64·cgroup v2·seccomp 지원 및 nested user/mount/PID/IPC/network namespace를 허용하는 커널/LSM입니다.
 AppArmor·SELinux·rootless Docker·userns-remap 또는 상위 컨테이너의 제한이 남아 있으면 검사에 실패할 수 있습니다.
@@ -262,72 +258,30 @@ pnpm runner:check
 
 ## 8. 기존 설치 업데이트와 정상 실행 확인
 
-워커를 Ctrl+C로 중지한 뒤 저장소 폴더에서 진행합니다. 코드 로컬 변경이 있으면 먼저 보존하세요.
-예전에 진단 로그를 넣느라 아래 두 파일만 수정했고 `git pull`이 거절된다면,
-그 수정은 다음과 같이 보관한 뒤 업데이트할 수 있습니다.
+같은 CLI 빌드에서 실행 이미지나 정책을 갱신하는 절차입니다. CLI 새 설치 자체는 [설치 가이드](getting-started.md), 고정 버전 교체는 [도구 버전 안내](toolchain.md)를 따릅니다. 워커를 Ctrl+C로 중지하고 변경한 로컬 소스가 있다면 먼저 보존하세요.
 
 ```bash
-git stash push -m "local runner diagnostics before sandbox fix" -- packages/agent-codex/src/index.ts scripts/check-runner.ts
-```
-
-이 명령은 지정한 소스 파일만 보관합니다. `.env`나 로그인 파일을 보관하는 명령이 아닙니다.
-업데이트 후 `git stash show -p`로 확인하고 필요한 개인 수정만 새 코드에 반영하세요.
-다른 파일에도 변경이 있으면 그 변경도 별도로 보존한 뒤 진행합니다.
-
-```bash
-cd "$HOME/Discord-Auto-PR"
-git status
-git pull --ff-only
 pnpm install --frozen-lockfile
-pnpm --filter @hub/agent-codex build
 pnpm build
 pnpm runner:build
 docker image inspect hub-codex:0.164.0 --format '{{.Id}}'
 ```
 
-**마지막 명령의 새 `sha256:...` 전체 값을 `.env`의 `HUB_CODEX_IMAGE`에 반영하세요.**
-같은 `hub-codex:0.164.0` 태그여도 entrypoint 수정으로 image ID가 바뀝니다.
-기존 `.env` 전체를 예제 파일로 덮어쓰거나 로그인 프로필을 지우지 마세요.
-AppArmor가 활성화된 호스트는 앞의 전용 프로필 설치와 `.env`의 `HUB_CODEX_APPARMOR_PROFILE` 설정도 완료하세요.
+출력된 새 `sha256:…` 전체 값을 `.env`의 `HUB_CODEX_IMAGE`에 반영합니다. 같은 이미지 태그여도 빌드 내용이 바뀌면 ID가 달라질 수 있습니다. 사용자 정의 도구·의존성이 필요한 저장소는 그 준비를 유지한 새 고정 이미지를 사용하세요. `.env` 전체를 덮어쓰거나 CLI 로그인 프로필을 지우지 않습니다.
+
+AppArmor 호스트는 위 전용 프로필을 daemon 호스트에 준비하고 `HUB_CODEX_APPARMOR_PROFILE`을 설정합니다. 기존 컨테이너가 새 프로필로 자동 변경되는 것은 아니므로 새 실행 전에 검사를 완료하세요.
 
 ```bash
 pnpm security:check
 pnpm runner:check
-pnpm test
-pnpm test:integration
+pnpm codex:status
 ```
 
-검사 JSON이 `{"ready":true,"reason":"OK"}`일 때만, 기존 Codex 로그인·제한 네트워크·프로젝트 검증 명령 설정을 확인하고 워커를 시작합니다.
+검사 JSON `{"ready":true,"reason":"OK"}`, CLI 로그인, 제한 네트워크, 실제 프로젝트 검증 명령이 준비되면 `pnpm dev:worker`로 시작합니다. 실제 모델 요청·원격 PR·병합은 이 검사에 포함하지 않습니다.
 
-```bash
-pnpm dev:worker
-```
+정책·런타임·검사 소스:
 
-관련 안내: [전체 설치·실행](getting-started.md), [구현 상태](implementation-status.md).
-
-## 9. 수정 파일과 검증 결과
-
-| 파일                                                                                                                                                                                                                    | 변경 목적                                                              |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| [index.ts](../packages/agent-codex/src/index.ts), [container.ts](../packages/agent-codex/src/container.ts), [probe.ts](../packages/agent-codex/src/probe.ts), [auth.ts](../packages/agent-codex/src/auth.ts)            | adapter 연결, 생성 전후 정책 확인, 실제 다중 격리 검사, 인증·명령 권한 |
-| [check-runner.ts](../scripts/check-runner.ts), [package.json](../package.json)                                                                                                                                          | `.env` 읽기, 안전한 JSON 실패 보고, 정책 감사 명령                     |
-| [codex.Dockerfile](../infra/docker/codex.Dockerfile)                                                                                                                                                                    | 비공개 HOME 초기화·읽기 전용 patch helper                              |
-| [infra/security](../infra/security/README.md)                                                                                                                                                                           | 고정 Moby 원본·생성기·seccomp/AppArmor 정책·라이선스                   |
-| [sandbox.test.ts](../tests/integration/sandbox.test.ts), [seccomp-probe.c](../tests/fixtures/seccomp-probe.c), [seccomp.test.ts](../tests/unit/seccomp.test.ts), [codex-auth.test.ts](../tests/unit/codex-auth.test.ts) | 실제 kernel·namespace·인증·정리 검사와 정책 회귀 테스트                |
-| [ci.yml](../.github/workflows/ci.yml), [.env.example](../.env.example)                                                                                                                                                  | enforce AppArmor로 CI 검증·명시적 선택 설정                            |
-| [README](../README.md), [getting-started.md](getting-started.md), [implementation-status.md](implementation-status.md), 이 문서                                                                                         | 설치·PULL·진단·지원 범위·검증 결과                                     |
-
-전체 파일 목록은 `git diff --name-only 416d2e3 HEAD`로 확인할 수 있습니다.
-
-| 실행 명령                              | 확인 결과                                       |
-| -------------------------------------- | ----------------------------------------------- |
-| `pnpm --filter @hub/agent-codex build` | 성공                                            |
-| `pnpm runner:check`                    | 실제 sandbox에서 `{"ready":true,"reason":"OK"}` |
-| `pnpm build`                           | 12개 패키지 성공                                |
-| `pnpm test`                            | 65개 통과                                       |
-| `pnpm test:integration`                | 31개 통과                                       |
-| `pnpm test:e2e`                        | GitHub CI에서 1개 통과                          |
-| lint·typecheck·format·`security:check` | 통과                                            |
-
-실제 GitHub App PR 생성·병합이나 모델 요청은 수행하지 않았습니다.
-로그인 프로필·개인 키·봇 토큰을 출력하거나 커밋하지 않았습니다.
+- [정책 원본·생성기](../infra/security/README.md)
+- [컨테이너 생성·검증·정리](../packages/agent-codex/src/container.ts), [실제 격리 probe](../packages/agent-codex/src/probe.ts)
+- [CLI 인증·권한 설정](../packages/agent-codex/src/auth.ts), [adapter](../packages/agent-codex/src/index.ts)
+- [Docker 통합 검사](../tests/integration/sandbox.test.ts), [syscall fixture](../tests/fixtures/seccomp-probe.c), [CI](../.github/workflows/ci.yml)
